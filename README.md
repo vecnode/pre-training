@@ -19,6 +19,8 @@ uv_bootstrap.bat
 main.bat
 ```
 
+All operational batch and Python scripts are now under `scripts/`.
+
 ## License
 
 Licensed under the [MIT License](./LICENSE)

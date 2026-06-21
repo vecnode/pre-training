@@ -2,6 +2,7 @@
 setlocal EnableExtensions
 
 set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR=%%~fI"
 
 title PDF to PNG Resume Converter
 echo.
@@ -25,9 +26,6 @@ echo Output folder will be created automatically as:
 echo   [dataset_name]_PNG
 echo If it already exists, conversion will resume.
 echo.
-
-call "%SCRIPT_DIR%uv_bootstrap.bat"
-if errorlevel 1 goto :end
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%convert_pdf_to_png.ps1" -DatasetPath "%DATASET_PATH%" -PythonExe "%UFO_PYTHON%"
 

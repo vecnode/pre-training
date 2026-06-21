@@ -4,6 +4,14 @@ setlocal EnableExtensions
 set "SCRIPT_DIR=%~dp0"
 title Dataset Pre-Training Controller
 
+call "%SCRIPT_DIR%uv_bootstrap.bat"
+if errorlevel 1 (
+	echo.
+	echo UV bootstrap failed. Exiting.
+	pause
+	goto end
+)
+
 :menu
 cls
 echo.
@@ -34,15 +42,15 @@ pause
 goto menu
 
 :convert
-call "%SCRIPT_DIR%convert_pdf_to_png.bat"
+call "%SCRIPT_DIR%scripts\convert_pdf_to_png.bat"
 goto menu
 
 :ocr
-call "%SCRIPT_DIR%ocr_detection_png.bat"
+call "%SCRIPT_DIR%scripts\ocr_detection_png.bat"
 goto menu
 
 :yolo
-call "%SCRIPT_DIR%object_detection_png.bat"
+call "%SCRIPT_DIR%scripts\object_detection_png.bat"
 goto menu
 
 :bootstrap

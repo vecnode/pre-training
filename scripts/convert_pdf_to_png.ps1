@@ -26,6 +26,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Split-Path -Parent $scriptRoot
 
 function Resolve-PathFromRoot {
     param(
@@ -35,7 +36,7 @@ function Resolve-PathFromRoot {
 
     $candidate = $PathValue
     if (-not [System.IO.Path]::IsPathRooted($candidate)) {
-        $candidate = Join-Path $scriptRoot $candidate
+        $candidate = Join-Path $projectRoot $candidate
     }
 
     if ($MustExist) {
@@ -59,7 +60,7 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
-    $log = Join-Path $scriptRoot 'conversion_log.txt'
+    $log = Join-Path $projectRoot 'conversion_log.txt'
 } else {
     $log = Resolve-PathFromRoot -PathValue $LogPath
 }
@@ -70,7 +71,7 @@ $parallel = [Math]::Max(1, $Parallel)
 $pdfToPpm = (Get-Command pdftoppm -ErrorAction Stop).Source
 
 if ([string]::IsNullOrWhiteSpace($PythonExe)) {
-    $venvPython = Join-Path $scriptRoot '.venv\Scripts\python.exe'
+    $venvPython = Join-Path $projectRoot '.venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $venvPython -PathType Leaf) {
         $pythonExe = $venvPython
     } else {

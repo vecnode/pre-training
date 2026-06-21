@@ -38,9 +38,20 @@ if errorlevel 1 (
 )
 
 echo.
-echo Installing CUDA-enabled PyTorch wheels...
-uv pip install --python "%VENV_PY%" --index-url "%TORCH_INDEX_URL%" --upgrade --reinstall torch torchvision
-if errorlevel 1 exit /b 1
+set "NEED_TORCH_INSTALL=1"
+"%VENV_PY%" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('torch') and importlib.util.find_spec('torchvision') else 1)"
+if not errorlevel 1 (
+    "%VENV_PY%" -c "import sys,torch; sys.exit(0 if torch.version.cuda else 1)"
+    if not errorlevel 1 set "NEED_TORCH_INSTALL=0"
+)
+
+if "%NEED_TORCH_INSTALL%"=="1" (
+    echo Installing CUDA-enabled PyTorch wheels...
+    uv pip install --python "%VENV_PY%" --index-url "%TORCH_INDEX_URL%" torch torchvision
+    if errorlevel 1 exit /b 1
+) else (
+    echo CUDA-enabled torch and torchvision already installed. Skipping install.
+)
 
 echo.
 echo Verifying CUDA in local environment...

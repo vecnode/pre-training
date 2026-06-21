@@ -11,8 +11,9 @@ from pathlib import Path
 import easyocr
 import torch
 
-DEFAULT_IMAGE_DIR = Path(__file__).resolve().parent / "Release_1_PNG"
-DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output" / "OCR_TEXT.md"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_IMAGE_DIR = PROJECT_ROOT / "Release_1_PNG"
+DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "OCR_TEXT.md"
 SECTION_RE = re.compile(
     r"^## `(.+?)`\s*\r?\n\s*Full path: `(.+?)`",
     re.MULTILINE,

@@ -2,7 +2,8 @@
 setlocal EnableExtensions
 
 set "SCRIPT_DIR=%~dp0"
-set "OUT_DIR=%SCRIPT_DIR%output"
+for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR=%%~fI"
+set "OUT_DIR=%ROOT_DIR%\output"
 
 title YOLO Object Detection on PNG Dataset
 echo.
@@ -31,16 +32,16 @@ if exist "%DATASET_INPUT%" (
 	) else (
 		set "PNG_DIR=%DATASET_INPUT%"
 	)
-) else if exist "%SCRIPT_DIR%%DATASET_INPUT%" (
+) else if exist "%ROOT_DIR%\%DATASET_INPUT%" (
 	if /I "%DATASET_INPUT:~-4%"=="_PNG" (
-		set "PNG_DIR=%SCRIPT_DIR%%DATASET_INPUT%"
-	) else if exist "%SCRIPT_DIR%%DATASET_INPUT%_PNG" (
-		set "PNG_DIR=%SCRIPT_DIR%%DATASET_INPUT%_PNG"
+		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%"
+	) else if exist "%ROOT_DIR%\%DATASET_INPUT%_PNG" (
+		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%_PNG"
 	) else (
-		set "PNG_DIR=%SCRIPT_DIR%%DATASET_INPUT%"
+		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%"
 	)
-) else if exist "%SCRIPT_DIR%%DATASET_INPUT%_PNG" (
-	set "PNG_DIR=%SCRIPT_DIR%%DATASET_INPUT%_PNG"
+) else if exist "%ROOT_DIR%\%DATASET_INPUT%_PNG" (
+	set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%_PNG"
 )
 
 if not exist "%PNG_DIR%" (
@@ -63,9 +64,6 @@ echo.
 echo Input : %PNG_DIR%
 echo Output: %OUT_FILE%
 echo.
-
-call "%SCRIPT_DIR%uv_bootstrap.bat"
-if errorlevel 1 goto :end
 
 "%UFO_PYTHON%" "%SCRIPT_DIR%object_detection_png.py" --image-dir "%PNG_DIR%" --output "%OUT_FILE%"
 

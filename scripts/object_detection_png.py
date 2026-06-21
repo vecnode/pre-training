@@ -16,9 +16,10 @@ from PIL import Image
 from sklearn.cluster import KMeans
 from ultralytics import YOLO
 
-DEFAULT_IMAGE_DIR = Path(__file__).resolve().parent / "Release_1_PNG"
-DEFAULT_OUTPUT = Path(__file__).resolve().parent / "output" / "OBJS_TEXT.md"
-DEFAULT_YOLO_MODEL = Path(__file__).resolve().parent / "models" / "yolov8n.pt"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_IMAGE_DIR = PROJECT_ROOT / "Release_1_PNG"
+DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "OBJS_TEXT.md"
+DEFAULT_YOLO_MODEL = PROJECT_ROOT / "models" / "yolov8n.pt"
 SECTION_RE = re.compile(r"^## `(.+?)`", re.MULTILINE)
 SCHEMA_VERSION = 1
 
