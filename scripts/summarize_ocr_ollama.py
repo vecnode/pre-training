@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -20,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default="", help="Ollama model name (blank uses first available)")
     parser.add_argument("--ollama-url", default=DEFAULT_OLLAMA_URL, help="Ollama base URL")
     parser.add_argument("--timeout", type=int, default=120, help="HTTP timeout in seconds")
+    parser.add_argument("--progress-every", type=int, default=1, help="Print progress every N rows (default: 1)")
     parser.add_argument("--no-resume", action="store_true", help="Recompute existing summaries")
     return parser.parse_args()
 
@@ -132,6 +134,7 @@ def main() -> int:
     with output_path.open("a", encoding="utf-8", newline="") as out:
         writer = csv.DictWriter(out, fieldnames=CSV_FIELDS, quoting=csv.QUOTE_MINIMAL)
         for row in pending:
+            t0 = time.time()
             image = (row.get("image") or "").strip()
             text = (row.get("text") or "").strip()
             status = (row.get("status") or "").strip().lower()
@@ -147,6 +150,9 @@ def main() -> int:
                     }
                 )
                 done += 1
+                if done % max(1, args.progress_every) == 0:
+                    elapsed = time.time() - t0
+                    print(f"[{done}/{len(pending)}] skipped {image} ({elapsed:.1f}s)", flush=True)
                 continue
 
             try:
@@ -160,6 +166,7 @@ def main() -> int:
                         "model": model,
                     }
                 )
+                row_result = "ok"
             except Exception as exc:
                 writer.writerow(
                     {
@@ -170,9 +177,11 @@ def main() -> int:
                         "model": model,
                     }
                 )
+                row_result = "error"
             done += 1
-            if done % 10 == 0:
-                print(f"[{done}/{len(pending)}] summarized", flush=True)
+            if done % max(1, args.progress_every) == 0:
+                elapsed = time.time() - t0
+                print(f"[{done}/{len(pending)}] {row_result} {image} ({elapsed:.1f}s)", flush=True)
 
     print(f"Done. Wrote {done} summary row(s) to {output_path}", flush=True)
     return 0
