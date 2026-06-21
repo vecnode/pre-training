@@ -8,7 +8,7 @@ set "OUT_DIR=%ROOT_DIR%\output"
 title OCR Detection on PNG Dataset
 echo.
 echo ================================================
-echo   OCR Detection (PNG -> output\DATASET_OCR.md)
+echo   OCR Detection (PNG -> output\DATASET_1_OCR.csv)
 echo ================================================
 echo.
 echo Enter dataset base name OR PNG folder path.
@@ -29,16 +29,12 @@ if exist "%DATASET_INPUT%" (
 		set "PNG_DIR=%DATASET_INPUT%"
 	) else if exist "%DATASET_INPUT%_PNG" (
 		set "PNG_DIR=%DATASET_INPUT%_PNG"
-	) else (
-		set "PNG_DIR=%DATASET_INPUT%"
 	)
 ) else if exist "%ROOT_DIR%\%DATASET_INPUT%" (
 	if /I "%DATASET_INPUT:~-4%"=="_PNG" (
 		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%"
 	) else if exist "%ROOT_DIR%\%DATASET_INPUT%_PNG" (
 		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%_PNG"
-	) else (
-		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%"
 	)
 ) else if exist "%ROOT_DIR%\%DATASET_INPUT%_PNG" (
 	set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%_PNG"
@@ -58,7 +54,7 @@ if /I "%DATASET_NAME:~-4%"=="_PNG" set "DATASET_NAME=%DATASET_NAME:~0,-4%"
 if "%DATASET_NAME%"=="" set "DATASET_NAME=dataset"
 
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
-set "OUT_FILE=%OUT_DIR%\%DATASET_NAME%_OCR.md"
+set "OUT_FILE=%OUT_DIR%\%DATASET_NAME%_OCR.csv"
 
 echo.
 echo Input : %PNG_DIR%

@@ -47,7 +47,7 @@ if not errorlevel 1 (
 
 if "%NEED_TORCH_INSTALL%"=="1" (
     echo Installing CUDA-enabled PyTorch wheels...
-    uv pip install --python "%VENV_PY%" --index-url "%TORCH_INDEX_URL%" torch torchvision
+    uv pip install --python "%VENV_PY%" --index-url "%TORCH_INDEX_URL%" --reinstall torch torchvision
     if errorlevel 1 exit /b 1
 ) else (
     echo CUDA-enabled torch and torchvision already installed. Skipping install.
