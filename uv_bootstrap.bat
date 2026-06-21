@@ -1,0 +1,55 @@
+@echo off
+setlocal EnableExtensions
+
+pushd "%~dp0" >nul
+set "SCRIPT_DIR=%CD%"
+popd >nul
+
+set "VENV_DIR=%SCRIPT_DIR%\.venv"
+set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
+set "TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
+
+where uv >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo uv is required but was not found in PATH.
+    echo Install uv from: https://docs.astral.sh/uv/getting-started/installation/
+    exit /b 1
+)
+
+if not exist "%VENV_PY%" (
+    echo.
+    echo Creating local virtual environment with uv...
+    uv venv "%VENV_DIR%"
+    if errorlevel 1 exit /b 1
+)
+
+echo.
+echo Syncing local dependencies with uv...
+uv sync --project "%SCRIPT_DIR%" --python "%VENV_PY%"
+if errorlevel 1 exit /b 1
+
+where nvidia-smi >nul 2>nul
+if errorlevel 1 (
+    echo.
+    echo NVIDIA GPU was not detected via nvidia-smi.
+    echo GPU-first mode requires an NVIDIA driver and CUDA-capable GPU.
+    exit /b 1
+)
+
+echo.
+echo Installing CUDA-enabled PyTorch wheels...
+uv pip install --python "%VENV_PY%" --index-url "%TORCH_INDEX_URL%" --upgrade --reinstall torch torchvision
+if errorlevel 1 exit /b 1
+
+echo.
+echo Verifying CUDA in local environment...
+"%VENV_PY%" -c "import sys, torch; print('torch', torch.__version__, 'cuda', torch.version.cuda); sys.exit(0 if torch.cuda.is_available() else 1)"
+if errorlevel 1 (
+    echo.
+    echo CUDA validation failed in .venv. GPU execution would fall back to CPU.
+    echo Check NVIDIA driver compatibility and rerun uv_bootstrap.bat.
+    exit /b 1
+)
+
+endlocal & set "UFO_PYTHON=%VENV_PY%" & exit /b 0
