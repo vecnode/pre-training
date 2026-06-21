@@ -241,7 +241,10 @@ def format_row(
 ) -> dict[str, str]:
     rel = relative_display_path(image_path, image_dir)
     full = str(image_path.resolve())
-    body = text.strip() if text.strip() else "(no text detected)"
+    raw = text.strip() if text.strip() else "(no text detected)"
+    body = " (newline) ".join(part.strip() for part in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n") if part.strip())
+    if not body:
+        body = "(no text detected)"
     return {
         "image": rel,
         "full_path": full,

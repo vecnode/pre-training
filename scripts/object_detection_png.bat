@@ -8,7 +8,7 @@ set "OUT_DIR=%ROOT_DIR%\output"
 title YOLO Object Detection on PNG Dataset
 echo.
 echo ======================================================
-echo   YOLO Detection (PNG -> output\DATASET_YOLO.md)
+echo   YOLO Detection (PNG -> output\DATASET_OBJS.csv)
 echo ======================================================
 echo.
 echo Enter dataset base name OR PNG folder path.
@@ -58,7 +58,7 @@ if /I "%DATASET_NAME:~-4%"=="_PNG" set "DATASET_NAME=%DATASET_NAME:~0,-4%"
 if "%DATASET_NAME%"=="" set "DATASET_NAME=dataset"
 
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
-set "OUT_FILE=%OUT_DIR%\%DATASET_NAME%_YOLO.md"
+set "OUT_FILE=%OUT_DIR%\%DATASET_NAME%_OBJS.csv"
 
 echo.
 echo Input : %PNG_DIR%

@@ -9,7 +9,7 @@ Structured first-stage pre-training pipeline:
 
 - `DATASET/`: Input PDFs (example: `Release_1/`).
 - `DATASET_PNG/`: Generated PNG pages (example: `Release_1_PNG/`).
-- `output/`: Generated outputs (`DATASET_1_OCR.csv`, `DATASET_YOLO.md`).
+- `output/`: Generated outputs (`DATASET_1_OCR.csv`, `DATASET_OBJS.csv`, `DATASET_SUMMARIES.csv`).
 
 
 ## Run Files
@@ -29,11 +29,9 @@ All operational batch and Python scripts are now under `scripts/`.
 - OCR row structure: one image per row with columns `image`, `full_path`, `status`, `reason`, `method`, `confidence`, `text`.
 - OCR write mode: append/resume by image row (`--no-resume` disables resume and rewrites processing flow).
 - `status`/`reason` record whether OCR passed and which preprocessing variant won, or why it failed.
-- Object recognition output file: `output/DATASET_YOLO.md`.
-- OBJ section structure (per image):
-	1. `## \`relative\\image.png\``
-	2. `json` fenced block (compact JSON)
-	3. Main keys: `schema_version`, `image`, `text_regions`, `objects`, `counts`, `error`.
+- Object recognition output file: `output/DATASET_OBJS.csv`.
+- OBJ row structure: one object per row with `image`, `full_path`, `object_id`, `label`, `confidence`, `x`, `y`, `width`, `height`.
+- Summaries output file: `output/DATASET_SUMMARIES.csv` generated from `DATASET_OCR.csv` via Ollama HTTP API.
 
 ## License
 
