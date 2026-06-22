@@ -32,6 +32,13 @@ Expected: train loss decreases and `eval_loss` is numeric (not `nan`).
 ../.venv/Scripts/python.exe train_llava15_lora.py --num-epochs 2
 ```
 
+Continue:
+
+```bash
+../.venv/Scripts/python.exe train_llava15_lora.py --output-dir runs/llava15_lora --resume-from-checkpoint last --num-epochs 2
+```
+
+
 One-epoch run (recommended first full pass):
 
 ```bash
