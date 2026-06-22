@@ -4,7 +4,7 @@ Structured first-stage pre-training pipeline:
 1. Convert PDF dataset to PNG pages.
 2. Run OCR over PNG pages.
 3. Run YOLO object detection over PNG pages.
-4. Summarize OCR CSV content via Ollama HTTP API (gemma4:e4b).
+4. Visual Instruction Tuning: Summarize OCR CSV content via Ollama API (gemma4:e4b).
 
 ## Folder structure
 

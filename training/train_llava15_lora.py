@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import random
@@ -17,6 +18,7 @@ os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 import torch
 from PIL import Image
+from PIL import ImageDraw
 from peft import LoraConfig, TaskType, get_peft_model
 from torch.utils.data import Dataset
 from transformers import (
@@ -264,6 +266,203 @@ def _find_last_checkpoint(output_dir: Path) -> Path | None:
     return checkpoints[-1][1]
 
 
+def _to_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_metric_series(log_history: list[dict]) -> dict[str, list[tuple[float, float]]]:
+    series: dict[str, list[tuple[float, float]]] = {
+        "train_loss": [],
+        "eval_loss": [],
+        "grad_norm": [],
+        "learning_rate": [],
+    }
+
+    fallback_step = 0.0
+    for row in log_history:
+        step = _to_float(row.get("step"))
+        if step is None:
+            step = _to_float(row.get("global_step"))
+        if step is None:
+            fallback_step += 1.0
+            step = fallback_step
+
+        loss = _to_float(row.get("loss"))
+        if loss is not None and _to_float(row.get("eval_loss")) is None:
+            series["train_loss"].append((step, loss))
+
+        eval_loss = _to_float(row.get("eval_loss"))
+        if eval_loss is not None:
+            series["eval_loss"].append((step, eval_loss))
+
+        grad_norm = _to_float(row.get("grad_norm"))
+        if grad_norm is not None:
+            series["grad_norm"].append((step, grad_norm))
+
+        learning_rate = _to_float(row.get("learning_rate"))
+        if learning_rate is not None:
+            series["learning_rate"].append((step, learning_rate))
+
+    return series
+
+
+def _draw_line_chart(
+    out_path: Path,
+    title: str,
+    x_label: str,
+    y_label: str,
+    lines: dict[str, list[tuple[float, float]]],
+) -> bool:
+    active = {k: v for k, v in lines.items() if v}
+    if not active:
+        return False
+
+    width, height = 1280, 720
+    left, right, top, bottom = 90, 40, 70, 90
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+
+    all_x = [x for pts in active.values() for x, _ in pts]
+    all_y = [y for pts in active.values() for _, y in pts]
+
+    x_min, x_max = min(all_x), max(all_x)
+    y_min, y_max = min(all_y), max(all_y)
+
+    if x_max <= x_min:
+        x_max = x_min + 1.0
+    if y_max <= y_min:
+        pad = 1.0 if y_min == 0 else abs(y_min) * 0.1
+        y_min -= pad
+        y_max += pad
+
+    img = Image.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(img)
+
+    palette = [
+        (31, 119, 180),
+        (255, 127, 14),
+        (44, 160, 44),
+        (214, 39, 40),
+        (148, 103, 189),
+    ]
+
+    def sx(x: float) -> float:
+        return left + (x - x_min) / (x_max - x_min) * plot_w
+
+    def sy(y: float) -> float:
+        return top + (y_max - y) / (y_max - y_min) * plot_h
+
+    for i in range(6):
+        yy = top + i * (plot_h / 5)
+        draw.line([(left, yy), (left + plot_w, yy)], fill=(230, 230, 230), width=1)
+        y_val = y_max - i * (y_max - y_min) / 5
+        draw.text((10, yy - 8), f"{y_val:.4g}", fill=(80, 80, 80))
+
+    for i in range(6):
+        xx = left + i * (plot_w / 5)
+        draw.line([(xx, top), (xx, top + plot_h)], fill=(240, 240, 240), width=1)
+        x_val = x_min + i * (x_max - x_min) / 5
+        draw.text((xx - 15, top + plot_h + 12), f"{x_val:.4g}", fill=(80, 80, 80))
+
+    draw.line([(left, top), (left, top + plot_h)], fill=(50, 50, 50), width=2)
+    draw.line([(left, top + plot_h), (left + plot_w, top + plot_h)], fill=(50, 50, 50), width=2)
+
+    for idx, (name, points) in enumerate(active.items()):
+        color = palette[idx % len(palette)]
+        scaled = [(sx(x), sy(y)) for x, y in points]
+        if len(scaled) == 1:
+            px, py = scaled[0]
+            draw.ellipse([(px - 3, py - 3), (px + 3, py + 3)], fill=color)
+        else:
+            draw.line(scaled, fill=color, width=3)
+
+        ly = top + 8 + idx * 20
+        lx = left + plot_w - 220
+        draw.rectangle([(lx, ly), (lx + 14, ly + 10)], fill=color)
+        draw.text((lx + 20, ly - 2), name, fill=(20, 20, 20))
+
+    draw.text((left, 18), title, fill=(20, 20, 20))
+    draw.text((left + plot_w // 2 - 20, height - 36), x_label, fill=(30, 30, 30))
+    draw.text((12, top - 30), y_label, fill=(30, 30, 30))
+
+    img.save(out_path)
+    return True
+
+
+def _save_history_csv(output_dir: Path, log_history: list[dict]) -> Path:
+    csv_path = output_dir / "training_log_history.csv"
+    keys = sorted({k for row in log_history for k in row.keys()})
+    if not keys:
+        keys = ["step"]
+
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        for row in log_history:
+            writer.writerow({k: row.get(k, "") for k in keys})
+    return csv_path
+
+
+def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dict, eval_metrics: dict) -> list[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_history = list(trainer.state.log_history or [])
+
+    (output_dir / "training_log_history.json").write_text(
+        json.dumps(log_history, indent=2),
+        encoding="utf-8",
+    )
+    saved: list[Path] = [_save_history_csv(output_dir, log_history)]
+
+    series = _extract_metric_series(log_history)
+
+    loss_png = output_dir / "loss_curve.png"
+    if _draw_line_chart(
+        out_path=loss_png,
+        title="Training and Evaluation Loss",
+        x_label="Step",
+        y_label="Loss",
+        lines={
+            "train_loss": series["train_loss"],
+            "eval_loss": series["eval_loss"],
+        },
+    ):
+        saved.append(loss_png)
+
+    grad_png = output_dir / "grad_norm_curve.png"
+    if _draw_line_chart(
+        out_path=grad_png,
+        title="Gradient Norm",
+        x_label="Step",
+        y_label="Grad Norm",
+        lines={"grad_norm": series["grad_norm"]},
+    ):
+        saved.append(grad_png)
+
+    lr_png = output_dir / "learning_rate_curve.png"
+    if _draw_line_chart(
+        out_path=lr_png,
+        title="Learning Rate Schedule",
+        x_label="Step",
+        y_label="Learning Rate",
+        lines={"learning_rate": series["learning_rate"]},
+    ):
+        saved.append(lr_png)
+
+    metric_summary = {
+        "train_metrics": train_metrics,
+        "eval_metrics": eval_metrics,
+    }
+    metric_json = output_dir / "metrics_summary.json"
+    metric_json.write_text(json.dumps(metric_summary, indent=2), encoding="utf-8")
+    saved.append(metric_json)
+    return saved
+
+
 def main() -> int:
     args = parse_args()
 
@@ -386,6 +585,16 @@ def main() -> int:
     print("Eval metrics:")
     for key in sorted(eval_metrics):
         print(f"  {key}: {eval_metrics[key]}")
+
+    graph_files = _save_training_graphs(
+        output_dir=output_dir,
+        trainer=trainer,
+        train_metrics=train_metrics,
+        eval_metrics=eval_metrics,
+    )
+    print("Saved training graphs and logs:")
+    for p in graph_files:
+        print(f"  {p}")
 
     summary = {
         "dataset_jsonl": str(data_path),
