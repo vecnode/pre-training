@@ -1,54 +1,82 @@
-# LLaVA 1.5 7B LoRA test (first epoch)
+# LLaVA 1.5 7B LoRA training
 
-This folder contains a first-start training smoke test for:
+Model: `llava-hf/llava-1.5-7b-hf`  
+Data: `../output/` CSVs + `../Release_1_PNG/` images  
+All downloads, cache, checkpoints, and adapters stay in `training/`.
 
-- model: `llava-hf/llava-1.5-7b-hf`
-- data source: `../output/Release_1_OCR.csv` + `../output/Release_1_SUMMARIES.csv`
-- images: paths read from CSV (root-relative, e.g. `Release_1_PNG\\...`)
-
-The commands below are intended to run from inside `training/` and reuse the existing root virtual environment (`../.venv`).
-
-## 1) Install training-only packages in existing .venv
+## 1) Install deps (once)
 
 ```bash
-uv pip install --python ../.venv/Scripts/python.exe transformers peft accelerate datasets sentencepiece
+uv pip install --python ../.venv/Scripts/python.exe transformers peft accelerate sentencepiece
 ```
 
-## 2) Build JSONL training file from CSV files
-
-Quick proof set (faster):
+## 2) Build JSONL dataset
 
 ```bash
-uv run --python ../.venv/Scripts/python.exe python build_llava15_dataset.py --root .. --max-samples 512
+../.venv/Scripts/python.exe build_llava15_dataset.py --root ..
 ```
 
-Full set:
+Output: `data/llava15_train.jsonl` with fields: `image_path`, `prompt`, `summary`.
+
+## 3) Evaluated smoke test (must pass before full run)
 
 ```bash
-uv run --python ../.venv/Scripts/python.exe python build_llava15_dataset.py --root ..
+../.venv/Scripts/python.exe train_llava15_lora_smoke.py --max-samples 256
 ```
 
-Output file is created at:
+Expected: train loss decreases and `eval_loss` is numeric (not `nan`).
 
-- `training/data/llava15_train.jsonl`
-
-## 3) Run first-epoch LoRA training
-
-Quick run:
+## 4) Full training with checkpoints
 
 ```bash
-uv run --python ../.venv/Scripts/python.exe python train_llava15_lora_smoke.py --dataset-jsonl data/llava15_train.jsonl --output-dir runs/llava15_lora_smoke --num-epochs 1 --max-samples 256
+../.venv/Scripts/python.exe train_llava15_lora.py --num-epochs 2
 ```
 
-Larger run:
+One-epoch run (recommended first full pass):
 
 ```bash
-uv run --python ../.venv/Scripts/python.exe python train_llava15_lora_smoke.py --dataset-jsonl data/llava15_train.jsonl --output-dir runs/llava15_lora_smoke --num-epochs 1
+../.venv/Scripts/python.exe train_llava15_lora.py --num-epochs 1 --output-dir runs/llava15_lora
 ```
 
-The trainer prints train and eval metrics (including loss) so you can confirm the model is training.
+Defaults: `save_strategy=epoch`, `eval_strategy=epoch`, and rolling checkpoint retention.
 
-## Files
+Useful variants:
 
-- `build_llava15_dataset.py`: joins OCR + summaries CSVs and resolves image paths
-- `train_llava15_lora_smoke.py`: runs LoRA smoke training for one epoch and saves adapter
+```bash
+# Save/eval by steps instead of epoch
+../.venv/Scripts/python.exe train_llava15_lora.py --save-strategy steps --save-steps 250 --eval-strategy steps --eval-steps 250
+
+# Resume from latest checkpoint in output dir
+../.venv/Scripts/python.exe train_llava15_lora.py --resume-from-checkpoint last
+
+# Resume from explicit checkpoint path
+../.venv/Scripts/python.exe train_llava15_lora.py --resume-from-checkpoint runs/llava15_lora/checkpoint-500
+```
+
+## Default training setup
+
+- LoRA on `q_proj` and `v_proj` only (~0.14% trainable params)
+- Batch size `1`, grad accumulation `4`
+- Learning rate `2e-4`
+- FP16 enabled when CUDA is available
+- Max sequence length `1024`
+
+## Output layout
+
+```text
+training/
+  data/llava15_train.jsonl
+  hf_cache/
+  runs/llava15_lora/checkpoint-*/
+  runs/llava15_lora/latest_checkpoint.txt
+  runs/llava15_lora/resume_command.txt
+  runs/llava15_lora/training_tracker.json
+  runs/llava15_lora/run_summary.json
+  runs/llava15_lora/final_adapter/
+```
+
+Resume after stopping:
+
+```bash
+../.venv/Scripts/python.exe train_llava15_lora.py --output-dir runs/llava15_lora --resume-from-checkpoint last
+```

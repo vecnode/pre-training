@@ -11,3 +11,8 @@ output/*.md
 __pycache__/
 *.pyc
 *.csv
+
+# training/ — generated files, model weights, outputs
+training/hf_cache/
+training/data/
+training/runs/

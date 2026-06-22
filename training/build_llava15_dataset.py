@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", type=Path, default=default_root, help="Project root directory")
     parser.add_argument("--ocr-csv", type=Path, default=None, help="Path to OCR CSV (default: <root>/output/Release_1_OCR.csv)")
     parser.add_argument("--summaries-csv", type=Path, default=None, help="Path to summaries CSV (default: <root>/output/Release_1_SUMMARIES.csv)")
-    parser.add_argument("--out-jsonl", type=Path, default=Path("data/llava15_train.jsonl"), help="Output JSONL path (relative to training/)")
+    parser.add_argument("--out-jsonl", type=Path, default=here.parent / "data" / "llava15_train.jsonl", help="Output JSONL path (default: training/data/llava15_train.jsonl)")
     parser.add_argument("--max-samples", type=int, default=0, help="Optional cap for quick tests (0 = all)")
     parser.add_argument("--max-ocr-chars", type=int, default=4000, help="Truncate OCR text to this many chars")
     return parser.parse_args()
@@ -28,7 +28,13 @@ def normalize_image_key(value: str) -> str:
     return key
 
 
-def resolve_image_path(root: Path, image_key: str) -> Path | None:
+def resolve_image_path(root: Path, image_key: str, full_path: str = "") -> Path | None:
+    # Prefer the absolute full_path column from the OCR CSV when present
+    if full_path:
+        p = Path(full_path)
+        if p.exists():
+            return p
+
     if not image_key:
         return None
 
@@ -111,7 +117,8 @@ def main() -> int:
                 skipped_missing_summary += 1
                 continue
 
-            img_path = resolve_image_path(root, image_key)
+            full_path = (row.get("full_path") or "").strip()
+            img_path = resolve_image_path(root, image_key, full_path)
             if img_path is None:
                 skipped_missing_image += 1
                 continue
@@ -125,8 +132,9 @@ def main() -> int:
             sample = {
                 "image_key": image_key,
                 "image_path": str(img_path),
+                "ocr_text": ocr_text[: args.max_ocr_chars],
                 "prompt": prompt,
-                "target": summary,
+                "summary": summary,
             }
             dst.write(json.dumps(sample, ensure_ascii=False) + "\n")
             kept += 1
