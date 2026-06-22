@@ -4,7 +4,7 @@ Structured first-stage pre-training pipeline:
 1. Convert PDF dataset to PNG pages.
 2. Run OCR over PNG pages.
 3. Run YOLO object detection over PNG pages.
-4. Summarize OCR CSV content via Ollama HTTP API.
+4. Summarize OCR CSV content via Ollama HTTP API (gemma4:e4b).
 
 ## Folder structure
 
@@ -21,6 +21,13 @@ main.bat
 ```
 
 All operational batch and Python scripts are now under `scripts/`.
+
+## Environment bootstrap behavior
+
+- `uv_bootstrap.bat` now performs a check-first sync.
+- If local dependencies already match `uv.lock`, it skips `uv sync` entirely.
+- `torch` and `torchvision` are intentionally excluded from `uv sync` so your installed CUDA wheels are preserved.
+- CUDA wheel installation only runs when `torch`/`torchvision` are missing or when `torch.version.cuda` is not available.
 
 
 ## Dataset Output Types

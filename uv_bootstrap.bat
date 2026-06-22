@@ -25,9 +25,15 @@ if not exist "%VENV_PY%" (
 )
 
 echo.
-echo Syncing local dependencies with uv...
-uv sync --project "%SCRIPT_DIR%" --python "%VENV_PY%"
-if errorlevel 1 exit /b 1
+echo Checking local dependencies with uv...
+uv sync --project "%SCRIPT_DIR%" --python "%VENV_PY%" --frozen --inexact --no-install-package torch --no-install-package torchvision --check >nul 2>nul
+if errorlevel 1 (
+    echo Syncing local dependencies with uv...
+    uv sync --project "%SCRIPT_DIR%" --python "%VENV_PY%" --frozen --inexact --no-install-package torch --no-install-package torchvision
+    if errorlevel 1 exit /b 1
+) else (
+    echo Local dependencies are already synced. Skipping uv sync.
+)
 
 where nvidia-smi >nul 2>nul
 if errorlevel 1 (

@@ -149,6 +149,7 @@ def main() -> int:
                         "model": model,
                     }
                 )
+                out.flush()
                 done += 1
                 if done % max(1, args.progress_every) == 0:
                     elapsed = time.time() - t0
@@ -166,6 +167,7 @@ def main() -> int:
                         "model": model,
                     }
                 )
+                out.flush()
                 row_result = "ok"
             except Exception as exc:
                 writer.writerow(
@@ -177,6 +179,7 @@ def main() -> int:
                         "model": model,
                     }
                 )
+                out.flush()
                 row_result = "error"
             done += 1
             if done % max(1, args.progress_every) == 0:
