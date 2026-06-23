@@ -16,7 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--summaries-csv", type=Path, default=None, help="Path to summaries CSV (default: <root>/output/Release_1_SUMMARIES.csv)")
     parser.add_argument("--out-jsonl", type=Path, default=here.parent / "data" / "llava15_train.jsonl", help="Output JSONL path (default: training/data/llava15_train.jsonl)")
     parser.add_argument("--max-samples", type=int, default=0, help="Optional cap for quick tests (0 = all)")
-    parser.add_argument("--max-ocr-chars", type=int, default=4000, help="Truncate OCR text to this many chars")
+    parser.add_argument("--max-ocr-chars", type=int, default=8000, help="Cap OCR text stored per sample (the trainer further truncates by tokens, head+tail, to fit the summary)")
     return parser.parse_args()
 
 

@@ -149,6 +149,34 @@ class CheckpointTrackerCallback(TrainerCallback):
         self._write_tracking_files(state)
 
 
+# Instruction wrapper. Must stay identical between training and generation so the
+# model sees the same prefix at inference time. The OCR page text is appended
+# after this block; the model is trained to produce the ASSISTANT summary only.
+INSTRUCTION = (
+    "Summarize this scanned document page in one concise paragraph. "
+    "Focus on key entities, dates, events, and any UAP-related content if present.\n\n"
+    "OCR text:\n"
+)
+
+
+def truncate_ocr_ids(ids: list[int], budget: int) -> list[int]:
+    """Fit OCR token ids into `budget`, keeping the head and tail of the page.
+
+    Diplomatic cables carry the most identifying signal at the top (subject,
+    sender, date) and useful context at the bottom (declass notes, conclusions),
+    so when a page is too long we keep both ends rather than only the start.
+    """
+    if budget <= 0:
+        return []
+    if len(ids) <= budget:
+        return ids
+    head = int(budget * 0.75)
+    tail = budget - head
+    if tail <= 0:
+        return ids[:budget]
+    return ids[:head] + ids[-tail:]
+
+
 class JsonlDataset(Dataset):
     def __init__(self, records: list[dict[str, str]]):
         self.records = records
@@ -161,53 +189,67 @@ class JsonlDataset(Dataset):
 
 
 class LlavaCollator:
-    def __init__(self, processor: AutoProcessor, max_length: int = 1024):
-        self.processor = processor
+    """Text-only OCR -> summary collator.
+
+    The image is intentionally NOT used. The OCR text already carries all the
+    signal we want to summarize, so we train the LLaVA language backbone as a
+    pure text model (no <image> token, no pixel_values). This also removes the
+    <image> token-expansion mismatch that previously leaked the prompt and OCR
+    text into the loss target, which made the model copy its input instead of
+    summarizing.
+
+    Labels are masked everywhere except the summary, and the OCR is truncated by
+    tokens so the summary is *always* fully present in the loss budget.
+    """
+
+    def __init__(self, processor: AutoProcessor, max_length: int = 2048, max_summary_tokens: int = 256):
+        self.tokenizer = processor.tokenizer
         self.max_length = max_length
+        self.max_summary_tokens = max_summary_tokens
 
     def __call__(self, features: list[dict[str, str]]) -> dict[str, torch.Tensor]:
-        images = []
-        texts = []
-        prompt_lengths: list[int] = []
+        tok = self.tokenizer
+        eos_id = tok.eos_token_id
+        pad_id = tok.pad_token_id if tok.pad_token_id is not None else eos_id
+
+        head_ids = tok(f"USER: {INSTRUCTION}", add_special_tokens=True).input_ids
+        suffix_ids = tok(" ASSISTANT: ", add_special_tokens=False).input_ids
+
+        input_ids_list: list[list[int]] = []
+        labels_list: list[list[int]] = []
 
         for item in features:
-            image = Image.open(item["image_path"]).convert("RGB")
-            images.append(image)
+            ocr_text = (item.get("ocr_text") or "").strip()
+            summary = (item.get("summary") or "").strip()
 
-            user_prefix = f"USER: <image>\n{item['prompt']} ASSISTANT: "
-            full_text = user_prefix + item["summary"] + self.processor.tokenizer.eos_token
-            texts.append(full_text)
+            summary_ids = tok(summary, add_special_tokens=False).input_ids[: self.max_summary_tokens]
+            summary_ids = summary_ids + [eos_id]
 
-            prefix_ids = self.processor.tokenizer(user_prefix, add_special_tokens=False).input_ids
-            prompt_lengths.append(len(prefix_ids))
+            ocr_budget = self.max_length - len(head_ids) - len(suffix_ids) - len(summary_ids)
+            ocr_ids = tok(ocr_text, add_special_tokens=False).input_ids
+            ocr_ids = truncate_ocr_ids(ocr_ids, ocr_budget)
 
-        batch = self.processor(
-            text=texts,
-            images=images,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.max_length,
-        )
+            ids = head_ids + ocr_ids + suffix_ids + summary_ids
+            # Loss only on the summary; everything before it is context.
+            labels = ([-100] * (len(head_ids) + len(ocr_ids) + len(suffix_ids))) + summary_ids
 
-        labels = batch["input_ids"].clone()
-        labels[labels == self.processor.tokenizer.pad_token_id] = -100
+            input_ids_list.append(ids)
+            labels_list.append(labels)
 
-        for i, plen in enumerate(prompt_lengths):
-            seq_len = int(batch["attention_mask"][i].sum().item())
-            if seq_len <= 0:
-                continue
+        max_len = max(len(x) for x in input_ids_list)
+        bsz = len(input_ids_list)
 
-            cutoff = min(plen, seq_len - 1)
-            labels[i, :cutoff] = -100
+        input_ids = torch.full((bsz, max_len), pad_id, dtype=torch.long)
+        attention_mask = torch.zeros((bsz, max_len), dtype=torch.long)
+        labels = torch.full((bsz, max_len), -100, dtype=torch.long)
 
-            # Keep at least one target token so eval loss cannot become NaN.
-            if torch.all(labels[i, :seq_len] == -100):
-                last_idx = seq_len - 1
-                labels[i, last_idx] = batch["input_ids"][i, last_idx]
+        # Right padding keeps the supervised summary tokens aligned with labels.
+        for i, (ids, labs) in enumerate(zip(input_ids_list, labels_list)):
+            input_ids[i, : len(ids)] = torch.tensor(ids, dtype=torch.long)
+            attention_mask[i, : len(ids)] = 1
+            labels[i, : len(labs)] = torch.tensor(labs, dtype=torch.long)
 
-        batch["labels"] = labels
-        return batch
+        return {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
 
 def parse_args() -> argparse.Namespace:
@@ -223,7 +265,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=1, help="Per-device batch size")
     parser.add_argument("--grad-accum", type=int, default=4, help="Gradient accumulation steps")
     parser.add_argument("--learning-rate", type=float, default=2e-4, help="Learning rate")
-    parser.add_argument("--max-length", type=int, default=1024, help="Max tokenized sequence length")
+    parser.add_argument("--max-length", type=int, default=2048, help="Max tokenized sequence length (image tokens are no longer used, so this is the full text budget)")
     parser.add_argument("--lora-r", type=int, default=16, help="LoRA rank")
     parser.add_argument("--lora-alpha", type=int, default=32, help="LoRA alpha")
     parser.add_argument("--lora-dropout", type=float, default=0.05, help="LoRA dropout")
@@ -246,7 +288,8 @@ def read_jsonl(path: Path) -> list[dict[str, str]]:
             item = json.loads(line)
             if not isinstance(item, dict):
                 continue
-            if not item.get("image_path") or not item.get("prompt") or not item.get("summary"):
+            # Text-only training: we need OCR text and a summary; image fields are ignored.
+            if not item.get("ocr_text") or not item.get("summary"):
                 continue
             records.append(item)
     return records
@@ -534,6 +577,9 @@ def main() -> int:
     )
     model.config.use_cache = False
     model.gradient_checkpointing_enable()
+    # Required for text-only LoRA + gradient checkpointing: makes the input
+    # embeddings produce grad so gradients reach the (only-trainable) adapters.
+    model.enable_input_require_grads()
 
     lora_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
