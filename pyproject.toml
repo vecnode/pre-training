@@ -4,11 +4,15 @@ version = "0.1.0"
 description = "Local OCR and YOLO preprocessing pipeline"
 requires-python = ">=3.10"
 dependencies = [
+  "accelerate>=0.33.0",
   "easyocr>=1.7.2",
   "numpy>=1.26.0",
+  "peft>=0.12.0",
   "pillow>=10.0.0",
   "scikit-learn>=1.5.0",
+  "sentencepiece>=0.2.0",
   "torch>=2.4.0",
+  "transformers>=4.45.0",
   "ultralytics>=8.3.0",
 ]
 

@@ -7,8 +7,10 @@ All downloads, cache, checkpoints, and adapters stay in `training/`.
 ### 1) Install deps (once)
 
 ```bash
-uv pip install --python ../.venv/Scripts/python.exe transformers peft accelerate sentencepiece
+../uv_bootstrap.bat
 ```
+
+This installs project dependencies (including `transformers`, `peft`, `accelerate`, `sentencepiece`) through `uv sync`.
 
 ### 2) Build JSONL dataset
 
@@ -18,7 +20,7 @@ uv pip install --python ../.venv/Scripts/python.exe transformers peft accelerate
 
 Output: `data/llava15_train.jsonl` with fields: `image_path`, `prompt`, `summary`.
 
-### 3) Evaluated smoke test (must pass before full run)
+### 3) Evaluated test (must pass before full run)
 
 ```bash
 ../.venv/Scripts/python.exe train_llava15_lora_smoke.py --max-samples 256
