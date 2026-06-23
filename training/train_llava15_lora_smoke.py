@@ -212,6 +212,23 @@ def _to_float(value: object) -> float | None:
         return None
 
 
+def _format_epoch_tag(value: object) -> str:
+    epoch = _to_float(value)
+    if epoch is None:
+        return "epoch-unknown"
+
+    if abs(epoch - round(epoch)) < 1e-6:
+        epoch_text = str(int(round(epoch)))
+    else:
+        epoch_text = f"{epoch:.2f}".rstrip("0").rstrip(".").replace(".", "p")
+    return f"epoch-{epoch_text}"
+
+
+def _run_image_prefix(output_dir: Path, epoch_value: object) -> str:
+    run_name = output_dir.name or "run"
+    return f"{run_name}_{_format_epoch_tag(epoch_value)}"
+
+
 def _extract_metric_series(log_history: list[dict]) -> dict[str, list[tuple[float, float]]]:
     series: dict[str, list[tuple[float, float]]] = {
         "train_loss": [],
@@ -348,6 +365,7 @@ def _save_history_csv(output_dir: Path, log_history: list[dict]) -> Path:
 def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dict, eval_metrics: dict) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     log_history = list(trainer.state.log_history or [])
+    image_prefix = _run_image_prefix(output_dir, eval_metrics.get("epoch") or train_metrics.get("epoch") or trainer.state.epoch)
 
     (output_dir / "training_log_history.json").write_text(
         json.dumps(log_history, indent=2),
@@ -357,7 +375,7 @@ def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dic
 
     series = _extract_metric_series(log_history)
 
-    loss_png = output_dir / "loss_curve.png"
+    loss_png = output_dir / f"{image_prefix}_loss_curve.png"
     if _draw_line_chart(
         out_path=loss_png,
         title="Training and Evaluation Loss",
@@ -370,7 +388,7 @@ def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dic
     ):
         saved.append(loss_png)
 
-    grad_png = output_dir / "grad_norm_curve.png"
+    grad_png = output_dir / f"{image_prefix}_grad_norm_curve.png"
     if _draw_line_chart(
         out_path=grad_png,
         title="Gradient Norm",
@@ -380,7 +398,7 @@ def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dic
     ):
         saved.append(grad_png)
 
-    lr_png = output_dir / "learning_rate_curve.png"
+    lr_png = output_dir / f"{image_prefix}_learning_rate_curve.png"
     if _draw_line_chart(
         out_path=lr_png,
         title="Learning Rate Schedule",
