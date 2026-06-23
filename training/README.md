@@ -87,3 +87,20 @@ Fresh one-epoch run:
 ```
 
 Checkpoint files are written under `runs/llava15_lora/`, including `latest_checkpoint.txt`, `resume_command.txt`, and `final_adapter/`.
+
+### 5) Generate and evaluate with epoch-3 LoRA (end to end)
+
+Use the trained adapter to generate summaries from OCR CSV rows and compare against your reference summaries.
+
+```bash
+../.venv/Scripts/python.exe generate_llava15_lora.py --adapter-dir runs/llava15_lora/final_adapter --ocr-csv ../output/Release_1_OCR.csv --reference-csv ../output/Release_1_SUMMARIES.csv --out-csv runs/llava15_lora/generated_epoch3.csv --max-rows 200
+```
+
+What this gives you:
+- `runs/llava15_lora/generated_epoch3.csv` with generated summaries per page
+- `runs/llava15_lora/generated_epoch3_metrics.json` with generation counts and average token-F1 against reference summaries
+
+Use case:
+- Run this after each resumed epoch (`--extra-epochs 1`) with a fixed `--max-rows` and same OCR/reference CSVs.
+- Compare `generated_epoch*.csv` side by side to see qualitative improvements.
+- Track `avg_token_f1` in the metrics JSON as a quick quantitative trend.
