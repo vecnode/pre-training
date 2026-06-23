@@ -100,9 +100,10 @@ class ProgressCallback(TrainerCallback):
 class CheckpointTrackerCallback(TrainerCallback):
     """Writes small tracker files so training can always be resumed safely."""
 
-    def __init__(self, output_dir: Path, launch_cmd: str):
+    def __init__(self, output_dir: Path, launch_cmd: str, extra_epochs: float):
         self.output_dir = output_dir
         self.launch_cmd = launch_cmd
+        self.extra_epochs = extra_epochs
 
     def _write_tracking_files(self, state: TrainerState) -> None:
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -117,7 +118,7 @@ class CheckpointTrackerCallback(TrainerCallback):
         if latest_ckpt:
             resume_cmd = (
                 "../.venv/Scripts/python.exe train_llava15_lora.py "
-                f"--output-dir {self.output_dir} --resume-from-checkpoint \"{latest_ckpt}\""
+                f"--output-dir {self.output_dir} --resume-from-checkpoint \"{latest_ckpt}\" --extra-epochs {self.extra_epochs}"
             )
         else:
             resume_cmd = (
@@ -215,6 +216,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=_TRAINING_DIR / "runs" / "llava15_lora", help="Where checkpoints and final adapter are saved")
     parser.add_argument("--model-id", default="llava-hf/llava-1.5-7b-hf", help="Hugging Face model id")
     parser.add_argument("--num-epochs", type=float, default=2.0, help="Number of epochs for full run")
+    parser.add_argument("--extra-epochs", type=float, default=1.0, help="Extra epochs to train after the checkpoint when resuming")
     parser.add_argument("--max-samples", type=int, default=0, help="Optional cap for quick checks (0 = all)")
     parser.add_argument("--val-ratio", type=float, default=0.1, help="Validation split ratio")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -273,6 +275,36 @@ def _to_float(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _format_epoch_tag(value: object) -> str:
+    epoch = _to_float(value)
+    if epoch is None:
+        return "epoch-unknown"
+
+    if abs(epoch - round(epoch)) < 1e-6:
+        epoch_text = str(int(round(epoch)))
+    else:
+        epoch_text = f"{epoch:.2f}".rstrip("0").rstrip(".").replace(".", "p")
+    return f"epoch-{epoch_text}"
+
+
+def _run_image_prefix(output_dir: Path, epoch_value: object) -> str:
+    run_name = output_dir.name or "run"
+    return f"{run_name}_{_format_epoch_tag(epoch_value)}"
+
+
+def _read_checkpoint_epoch(checkpoint_dir: Path) -> float | None:
+    state_file = checkpoint_dir / "trainer_state.json"
+    if not state_file.exists():
+        return None
+
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+    return _to_float(state.get("epoch"))
 
 
 def _extract_metric_series(log_history: list[dict]) -> dict[str, list[tuple[float, float]]]:
@@ -411,6 +443,7 @@ def _save_history_csv(output_dir: Path, log_history: list[dict]) -> Path:
 def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dict, eval_metrics: dict) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     log_history = list(trainer.state.log_history or [])
+    image_prefix = _run_image_prefix(output_dir, eval_metrics.get("epoch") or train_metrics.get("epoch") or trainer.state.epoch)
 
     (output_dir / "training_log_history.json").write_text(
         json.dumps(log_history, indent=2),
@@ -420,7 +453,7 @@ def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dic
 
     series = _extract_metric_series(log_history)
 
-    loss_png = output_dir / "loss_curve.png"
+    loss_png = output_dir / f"{image_prefix}_loss_curve.png"
     if _draw_line_chart(
         out_path=loss_png,
         title="Training and Evaluation Loss",
@@ -433,7 +466,7 @@ def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dic
     ):
         saved.append(loss_png)
 
-    grad_png = output_dir / "grad_norm_curve.png"
+    grad_png = output_dir / f"{image_prefix}_grad_norm_curve.png"
     if _draw_line_chart(
         out_path=grad_png,
         title="Gradient Norm",
@@ -443,7 +476,7 @@ def _save_training_graphs(output_dir: Path, trainer: Trainer, train_metrics: dic
     ):
         saved.append(grad_png)
 
-    lr_png = output_dir / "learning_rate_curve.png"
+    lr_png = output_dir / f"{image_prefix}_learning_rate_curve.png"
     if _draw_line_chart(
         out_path=lr_png,
         title="Learning Rate Schedule",
@@ -517,9 +550,29 @@ def main() -> int:
     val_ds = JsonlDataset(val_records)
     collator = LlavaCollator(processor=processor, max_length=args.max_length)
 
+    resume_checkpoint: str | None = None
+    total_epochs = args.num_epochs
+    if args.resume_from_checkpoint:
+        if args.resume_from_checkpoint.lower() == "last":
+            last_ckpt = _find_last_checkpoint(output_dir)
+            if last_ckpt is None:
+                raise RuntimeError(f"No checkpoint-* directories found in {output_dir}")
+            resume_checkpoint = str(last_ckpt)
+        else:
+            resume_checkpoint = str(Path(args.resume_from_checkpoint).resolve())
+        print(f"Resuming from checkpoint: {resume_checkpoint}")
+
+        resumed_epoch = _read_checkpoint_epoch(Path(resume_checkpoint))
+        if resumed_epoch is not None:
+            total_epochs = resumed_epoch + args.extra_epochs
+            print(f"Continuing from epoch {resumed_epoch:.3f} to {total_epochs:.3f} total epochs")
+        else:
+            total_epochs = args.extra_epochs
+            print(f"Warning: could not read checkpoint epoch, training for {total_epochs:.3f} more epoch(s)")
+
     training_args = TrainingArguments(
         output_dir=str(output_dir),
-        num_train_epochs=args.num_epochs,
+        num_train_epochs=total_epochs,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=args.grad_accum,
@@ -539,8 +592,8 @@ def main() -> int:
         load_best_model_at_end=False,
     )
 
-    total_steps = int((len(train_records) / args.batch_size / args.grad_accum) * args.num_epochs)
-    print(f"Total optimiser steps: {total_steps}  (batch={args.batch_size} x accum={args.grad_accum} x epochs={args.num_epochs})")
+    total_steps = int((len(train_records) / args.batch_size / args.grad_accum) * total_epochs)
+    print(f"Total optimiser steps: {total_steps}  (batch={args.batch_size} x accum={args.grad_accum} x epochs={total_epochs})")
 
     launch_cmd = " ".join([
         "../.venv/Scripts/python.exe",
@@ -548,6 +601,7 @@ def main() -> int:
         f"--dataset-jsonl {data_path}",
         f"--output-dir {output_dir}",
         f"--num-epochs {args.num_epochs}",
+        f"--extra-epochs {args.extra_epochs}",
         f"--save-strategy {args.save_strategy}",
         f"--eval-strategy {args.eval_strategy}",
     ])
@@ -559,21 +613,10 @@ def main() -> int:
         eval_dataset=val_ds,
         data_collator=collator,
         callbacks=[
-            ProgressCallback(total_steps=total_steps, num_epochs=args.num_epochs),
-            CheckpointTrackerCallback(output_dir=output_dir, launch_cmd=launch_cmd),
+            ProgressCallback(total_steps=total_steps, num_epochs=total_epochs),
+            CheckpointTrackerCallback(output_dir=output_dir, launch_cmd=launch_cmd, extra_epochs=args.extra_epochs),
         ],
     )
-
-    resume_checkpoint: str | None = None
-    if args.resume_from_checkpoint:
-        if args.resume_from_checkpoint.lower() == "last":
-            last_ckpt = _find_last_checkpoint(output_dir)
-            if last_ckpt is None:
-                raise RuntimeError(f"No checkpoint-* directories found in {output_dir}")
-            resume_checkpoint = str(last_ckpt)
-        else:
-            resume_checkpoint = str(Path(args.resume_from_checkpoint).resolve())
-        print(f"Resuming from checkpoint: {resume_checkpoint}")
 
     train_result = trainer.train(resume_from_checkpoint=resume_checkpoint)
     train_metrics = train_result.metrics
@@ -599,7 +642,7 @@ def main() -> int:
     summary = {
         "dataset_jsonl": str(data_path),
         "output_dir": str(output_dir),
-        "num_epochs": args.num_epochs,
+        "num_epochs": total_epochs,
         "train_metrics": train_metrics,
         "eval_metrics": eval_metrics,
     }
