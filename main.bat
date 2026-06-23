@@ -1,6 +1,11 @@
 @echo off
+rem -----------------------------------------------------------------------------
+rem Main pipeline controller menu.
+rem Copyright (c) vecnode 2026
+rem -----------------------------------------------------------------------------
 setlocal EnableExtensions
 
+rem Resolve repository root from this script location.
 set "SCRIPT_DIR=%~dp0"
 title Dataset Pre-Training Controller
 

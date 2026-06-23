@@ -1,6 +1,11 @@
 @echo off
+rem -----------------------------------------------------------------------------
+rem Run YOLO object detection over PNG pages and write DATASET_OBJS.csv.
+rem Copyright (c) vecnode 2026
+rem -----------------------------------------------------------------------------
 setlocal EnableExtensions
 
+rem Resolve paths.
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR=%%~fI"
 set "OUT_DIR=%ROOT_DIR%\output"
@@ -24,6 +29,7 @@ if "%DATASET_INPUT%"=="" (
 
 set "PNG_DIR="
 
+rem Resolve dataset input to a PNG folder path.
 if exist "%DATASET_INPUT%" (
 	if /I "%DATASET_INPUT:~-4%"=="_PNG" (
 		set "PNG_DIR=%DATASET_INPUT%"
@@ -52,6 +58,7 @@ if not exist "%PNG_DIR%" (
 	goto :end
 )
 
+rem Derive output file name from dataset folder.
 for %%I in ("%PNG_DIR%") do set "DATASET_FOLDER=%%~nxI"
 set "DATASET_NAME=%DATASET_FOLDER%"
 if /I "%DATASET_NAME:~-4%"=="_PNG" set "DATASET_NAME=%DATASET_NAME:~0,-4%"
@@ -65,6 +72,7 @@ echo Input : %PNG_DIR%
 echo Output: %OUT_FILE%
 echo.
 
+rem Execute YOLO pipeline.
 "%UFO_PYTHON%" "%SCRIPT_DIR%object_detection_png.py" --image-dir "%PNG_DIR%" --output "%OUT_FILE%"
 
 echo.

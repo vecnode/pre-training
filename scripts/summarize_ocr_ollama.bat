@@ -1,6 +1,11 @@
 @echo off
+rem -----------------------------------------------------------------------------
+rem Summarize OCR CSV rows using Ollama and write DATASET_SUMMARIES.csv.
+rem Copyright (c) vecnode 2026
+rem -----------------------------------------------------------------------------
 setlocal EnableExtensions
 
+rem Resolve paths.
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR=%%~fI"
 set "OUT_DIR=%ROOT_DIR%\output"
@@ -23,6 +28,7 @@ if "%OCR_INPUT%"=="" (
 )
 
 set "OCR_FILE="
+rem Resolve OCR CSV input path from direct/file/base-name options.
 if exist "%OCR_INPUT%" (
 	set "OCR_FILE=%OCR_INPUT%"
 ) else if exist "%OUT_DIR%\%OCR_INPUT%" (
@@ -40,6 +46,7 @@ if not exist "%OCR_FILE%" (
 	goto :end
 )
 
+rem Derive output file name from OCR input file.
 for %%I in ("%OCR_FILE%") do set "OCR_BASENAME=%%~nI"
 set "DATASET_NAME=%OCR_BASENAME%"
 if /I "%DATASET_NAME:~-4%"=="_OCR" set "DATASET_NAME=%DATASET_NAME:~0,-4%"
@@ -56,6 +63,7 @@ echo Input : %OCR_FILE%
 echo Output: %OUT_FILE%
 echo.
 
+rem Execute summarization, optionally with explicit model.
 if defined OLLAMA_MODEL (
 	"%UFO_PYTHON%" "%SCRIPT_DIR%summarize_ocr_ollama.py" --input "%OCR_FILE%" --output "%OUT_FILE%" --model "%OLLAMA_MODEL%"
 ) else (

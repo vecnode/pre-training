@@ -1,6 +1,11 @@
 @echo off
+rem -----------------------------------------------------------------------------
+rem Convert dataset PDFs to PNG with resume support.
+rem Copyright (c) vecnode 2026
+rem -----------------------------------------------------------------------------
 setlocal EnableExtensions
 
+rem Resolve paths.
 set "SCRIPT_DIR=%~dp0"
 for %%I in ("%SCRIPT_DIR%..") do set "ROOT_DIR=%%~fI"
 
@@ -22,6 +27,7 @@ if "%DATASET_PATH%"=="" (
 )
 
 echo.
+rem Execute converter PowerShell wrapper.
 echo Output folder will be created automatically as:
 echo   [dataset_name]_PNG
 echo If it already exists, conversion will resume.

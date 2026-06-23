@@ -1,6 +1,11 @@
 @echo off
+rem -----------------------------------------------------------------------------
+rem Create/sync local uv environment and validate CUDA-ready torch.
+rem Copyright (c) vecnode 2026
+rem -----------------------------------------------------------------------------
 setlocal EnableExtensions
 
+rem Resolve absolute project root path.
 pushd "%~dp0" >nul
 set "SCRIPT_DIR=%CD%"
 popd >nul
@@ -9,6 +14,7 @@ set "VENV_DIR=%SCRIPT_DIR%\.venv"
 set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
 set "TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128"
 
+rem Ensure uv exists before continuing.
 where uv >nul 2>nul
 if errorlevel 1 (
     echo.
@@ -24,6 +30,7 @@ if not exist "%VENV_PY%" (
     if errorlevel 1 exit /b 1
 )
 
+rem Sync project dependencies from lock file.
 echo.
 echo Checking local dependencies with uv...
 uv sync --project "%SCRIPT_DIR%" --python "%VENV_PY%" --frozen --inexact --no-install-package torch --no-install-package torchvision --check >nul 2>nul
@@ -35,6 +42,7 @@ if errorlevel 1 (
     echo Local dependencies are already synced. Skipping uv sync.
 )
 
+rem Require NVIDIA tooling for GPU-first mode.
 where nvidia-smi >nul 2>nul
 if errorlevel 1 (
     echo.
@@ -43,6 +51,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Install CUDA wheels when torch/torchvision are missing or CPU-only.
 echo.
 set "NEED_TORCH_INSTALL=1"
 "%VENV_PY%" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('torch') and importlib.util.find_spec('torchvision') else 1)"
@@ -59,6 +68,7 @@ if "%NEED_TORCH_INSTALL%"=="1" (
     echo CUDA-enabled torch and torchvision already installed. Skipping install.
 )
 
+rem Final CUDA sanity check in the local venv.
 echo.
 echo Verifying CUDA in local environment...
 "%VENV_PY%" -c "import sys, torch; print('torch', torch.__version__, 'cuda', torch.version.cuda); sys.exit(0 if torch.cuda.is_available() else 1)"
