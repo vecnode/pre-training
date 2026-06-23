@@ -22,13 +22,6 @@ main.bat
 
 All operational batch and Python scripts are now under `scripts/`.
 
-## Environment bootstrap behavior
-
-- `uv_bootstrap.bat` now performs a check-first sync.
-- If local dependencies already match `uv.lock`, it skips `uv sync` entirely.
-- `torch` and `torchvision` are intentionally excluded from `uv sync` so your installed CUDA wheels are preserved.
-- CUDA wheel installation only runs when `torch`/`torchvision` are missing or when `torch.version.cuda` is not available.
-
 
 ## Dataset Output Types
 
