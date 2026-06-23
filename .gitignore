@@ -16,3 +16,5 @@ __pycache__/
 training/hf_cache/
 training/data/
 training/runs/
+
+examples_ocr.txt

@@ -24,6 +24,10 @@ INSTRUCTION = (
     "OCR text:\n"
 )
 
+# In a --ocr-text-file you can stack several OCR pages separated by a line
+# containing this token; each chunk is summarized independently.
+PAGE_DELIM = "===PAGEBREAK==="
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate summaries from OCR text with a trained LLaVA LoRA adapter (text-only)")
@@ -170,10 +174,21 @@ class Summarizer:
         return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
 
-def run_single(summarizer: Summarizer, ocr_text: str) -> int:
-    summary = summarizer.summarize(ocr_text)
-    print("\n=== Generated summary ===\n")
-    print(summary)
+def _strip_comments(chunk: str) -> str:
+    # Lines starting with '#' are human-readable labels, not OCR content.
+    return "\n".join(ln for ln in chunk.splitlines() if not ln.lstrip().startswith("#")).strip()
+
+
+def run_pages(summarizer: Summarizer, raw_text: str) -> int:
+    pages = [_strip_comments(p) for p in raw_text.split(PAGE_DELIM)]
+    pages = [p for p in pages if p]
+    if not pages:
+        raise SystemExit("No OCR text found in the input.")
+
+    for idx, page in enumerate(pages, start=1):
+        summary = summarizer.summarize(page)
+        print(f"\n=== Generated summary {idx}/{len(pages)}  ({len(page)} OCR chars) ===\n")
+        print(summary)
     print()
     return 0
 
@@ -285,7 +300,7 @@ def main() -> int:
     )
 
     if raw_text:
-        return run_single(summarizer, raw_text)
+        return run_pages(summarizer, raw_text)
     return run_csv(summarizer, args)
 
 
