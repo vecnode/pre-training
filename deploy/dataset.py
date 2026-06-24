@@ -29,10 +29,11 @@ def _preview(text: str, n: int = 110) -> str:
 
 
 class DataStore:
-    def __init__(self, ocr_csv: Path, summaries_csv: Path) -> None:
+    def __init__(self, ocr_csv: Path, summaries_csv: Path, image_root: Path | None = None) -> None:
         self.ocr_csv = Path(ocr_csv)
         self.summaries_csv = Path(summaries_csv)
-        self.rows: list[dict] = []  # {image, ocr_text, summary}
+        self.image_root = Path(image_root) if image_root else self.ocr_csv.parent.parent
+        self.rows: list[dict] = []  # {image, ocr_text, summary, full_path}
         self._load()
 
     def _load(self) -> None:
@@ -59,7 +60,12 @@ class DataStore:
                     summary = summaries.get(key)
                     if not summary:
                         continue
-                    self.rows.append({"image": key, "ocr_text": text, "summary": summary})
+                    self.rows.append({
+                        "image": key,
+                        "ocr_text": text,
+                        "summary": summary,
+                        "full_path": (row.get("full_path") or "").strip(),
+                    })
 
     def count(self) -> int:
         return len(self.rows)
@@ -81,4 +87,23 @@ class DataStore:
         if 0 <= idx < len(self.rows):
             r = self.rows[idx]
             return {"idx": idx, "image": r["image"], "ocr_text": r["ocr_text"], "summary": r["summary"]}
+        return None
+
+    def resolve_image_path(self, idx: int) -> Path | None:
+        """Locate the source PNG for a row: prefer the CSV full_path, else
+        fall back to <image_root>/<image key>."""
+        if not (0 <= idx < len(self.rows)):
+            return None
+        r = self.rows[idx]
+        full_path = r.get("full_path") or ""
+        if full_path:
+            p = Path(full_path)
+            if p.exists():
+                return p
+        candidate = self.image_root / r["image"]
+        if candidate.exists():
+            return candidate
+        candidate_win = self.image_root / r["image"].replace("/", "\\")
+        if candidate_win.exists():
+            return candidate_win
         return None

@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
     _summarizer.print_summary()  # print + inspect weights on deploy
 
     print(f"Loading dataset: OCR={_OCR_CSV}")
-    _dataset = DataStore(Path(_OCR_CSV), Path(_SUMMARIES_CSV))
+    _dataset = DataStore(Path(_OCR_CSV), Path(_SUMMARIES_CSV), image_root=_PROJECT_DIR)
     print(f"Dataset ready: {_dataset.count()} training pairs (OCR + reference summary)")
     print("Model ready. Front-end at /  |  API at /api/*")
     yield
@@ -123,6 +123,17 @@ def row(idx: int) -> dict:
     if item is None:
         return JSONResponse({"error": f"row {idx} out of range"}, status_code=404)
     return item
+
+
+@app.get("/api/image/{idx}")
+def image(idx: int):
+    """Serve the source PNG that was OCR'd for this row."""
+    if _dataset is None:
+        return JSONResponse({"error": "dataset not loaded"}, status_code=503)
+    path = _dataset.resolve_image_path(idx)
+    if path is None:
+        return JSONResponse({"error": f"image for row {idx} not found"}, status_code=404)
+    return FileResponse(path, media_type="image/png")
 
 
 @app.post("/api/summarize")
