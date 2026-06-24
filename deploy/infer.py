@@ -48,8 +48,19 @@ INSTRUCTION = (
     "OCR text:\n"
 )
 DEFAULT_ADAPTER = _PROJECT_DIR / "training" / "runs" / "llava15_lora" / "final_adapter"
+DEFAULT_MERGED = _DEPLOY_DIR / "merged_model"
 DEFAULT_MAX_LENGTH = 2048
 DEFAULT_MAX_NEW_TOKENS = 220
+
+
+def resolve_source(adapter_dir: Path | str = DEFAULT_ADAPTER, merged_model: Path | str | None = None) -> dict:
+    """Decide which artifact to load. A fused/merged model is preferred for
+    production (faster, no PEFT at runtime); fall back to the LoRA adapter."""
+    if merged_model:
+        return {"merged_model_dir": Path(merged_model)}
+    if DEFAULT_MERGED.exists() and any(DEFAULT_MERGED.iterdir()):
+        return {"merged_model_dir": DEFAULT_MERGED}
+    return {"adapter_dir": Path(adapter_dir)}
 
 
 def truncate_ocr_ids(ids: list[int], budget: int) -> list[int]:
@@ -152,6 +163,65 @@ class Summarizer:
         new_tokens = output_ids[0, input_ids.shape[1]:]
         return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
+    # -- introspection ------------------------------------------------------
+
+    def model_info(self) -> dict:
+        params = list(self.model.parameters())
+        total = sum(p.numel() for p in params)
+        trainable = sum(p.numel() for p in params if p.requires_grad)
+        has_lora = any("lora_" in n for n, _ in self.model.named_parameters())
+        vram_gb = None
+        if self.device == "cuda":
+            vram_gb = round(torch.cuda.memory_reserved() / 1e9, 2)
+        return {
+            "model_class": self.model.__class__.__name__,
+            "mode": "adapter (LoRA attached)" if has_lora else "fused / standalone",
+            "device": self.device,
+            "dtype": str(params[0].dtype) if params else "n/a",
+            "total_params": total,
+            "total_params_billions": round(total / 1e9, 3),
+            "trainable_params": trainable,
+            "vram_reserved_gb": vram_gb,
+            "max_length": self.max_length,
+            "max_new_tokens": self.max_new_tokens,
+        }
+
+    def inspect_weights(self, limit: int = 12, name_filter: str = "") -> list[dict]:
+        """Return per-tensor stats (shape/dtype/mean/std/norm) for inspection."""
+        rows: list[dict] = []
+        for name, p in self.model.named_parameters():
+            if name_filter and name_filter not in name:
+                continue
+            t = p.detach()
+            tf = t.float()
+            rows.append({
+                "name": name,
+                "shape": list(t.shape),
+                "dtype": str(t.dtype),
+                "numel": t.numel(),
+                "mean": round(tf.mean().item(), 6),
+                "std": round(tf.std().item(), 6),
+                "l2_norm": round(tf.norm().item(), 4),
+                "requires_grad": bool(p.requires_grad),
+            })
+            if len(rows) >= limit:
+                break
+        return rows
+
+    def print_summary(self) -> None:
+        info = self.model_info()
+        print("=" * 64)
+        print("  MODEL SUMMARY")
+        for k, v in info.items():
+            print(f"    {k:>22}: {v}")
+        print("  SAMPLE WEIGHTS (language-model attention q_proj):")
+        sample = self.inspect_weights(limit=4, name_filter="q_proj")
+        for row in sample:
+            print(f"    - {row['name']}")
+            print(f"        shape={row['shape']} dtype={row['dtype']} "
+                  f"mean={row['mean']} std={row['std']} l2={row['l2_norm']}")
+        print("=" * 64)
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Summarize OCR text with the trained LoRA adapter")
@@ -162,6 +232,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--text-file", default="", help="Read OCR text from this file ('-' for stdin)")
     p.add_argument("--max-length", type=int, default=DEFAULT_MAX_LENGTH, help="Input token budget (match training)")
     p.add_argument("--max-new-tokens", type=int, default=DEFAULT_MAX_NEW_TOKENS, help="Max generated tokens")
+    p.add_argument("--inspect", action="store_true", help="Print model summary and sample weights, then continue")
     return p.parse_args()
 
 
@@ -175,14 +246,16 @@ def _load_text(args: argparse.Namespace) -> str:
 
 def main() -> int:
     args = parse_args()
+    source = resolve_source(args.adapter_dir, args.merged_model)
     summarizer = Summarizer(
-        adapter_dir=args.adapter_dir,
         base_model_id=args.base_model,
-        merged_model_dir=args.merged_model,
         max_length=args.max_length,
         max_new_tokens=args.max_new_tokens,
+        **source,
     )
     print(f"Loaded on: {summarizer.device}")
+    if args.inspect:
+        summarizer.print_summary()
 
     text = _load_text(args)
     if text:

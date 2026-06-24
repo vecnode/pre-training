@@ -1,136 +1,153 @@
-# Deploying the OCR → summary adapter
+# Deploying the OCR → summary model
 
-Real-world inference for the trained LoRA adapter. Give it the **raw OCR text**
-of a document page (the same noisy form your pipeline produces, e.g.
-`EONFIDENTIAt (newline) FM AMEMBASSY ...`), get back a **one-paragraph summary**.
+Production inference for the trained LoRA adapter (or the fused full model), with a
+FastAPI service and a web front-end that doubles as a **dataset & adapter
+inspector**. Browse the OCR rows from `output/`, see the reference summary each
+page was trained against, and run the adapter live to compare all three side by
+side.
 
-This folder is independent of `training/` — you can ship it on its own as long as
-you also bring the trained adapter and the model cache (see Prerequisites).
+```
+deploy/
+├─ app.py             FastAPI service: web UI + JSON API (loads model + dataset once)
+├─ dataset.py         Loads & joins output/ OCR + SUMMARIES CSVs into training pairs
+├─ infer.py           Core Summarizer (importable) + CLI + weight introspection
+├─ merge_adapter.py   Fuse the LoRA adapter into the base -> standalone model
+├─ inspect_weights.py CLI to print/inspect deployed weights
+└─ static/index.html  Front-end: dataset browser + 3-way comparison
+```
+
+### The interface
+
+- **Left, top:** scrollable, searchable list of **raw OCR rows** (the training pairs).
+- **Left, bottom:** the matching **reference summaries** (what the model trained on),
+  aligned to the list above.
+- **Right:** for the selected row, three stacked panels — **(1)** raw OCR input,
+  **(2)** reference summary, **(3)** the adapter's live inference, with latency and a
+  word-overlap F1 vs. the reference so you can judge quality at a glance.
+- A collapsible **weights inspector** renders per-tensor shape/dtype/mean/std/L2.
 
 ```mermaid
 flowchart LR
-    A["Raw OCR text"] --> B["infer.py / serve.py"]
-    B --> C["LLaVA 1.5 language model (frozen) + LoRA adapter"]
-    C --> D["Greedy decode"]
-    D --> E["Summary"]
+    U["Browser UI / API client"] -->|POST /api/summarize| A["FastAPI app.py"]
+    A --> S["Summarizer (loaded once)"]
+    S --> M["LLaVA 1.5 language model (fused adapter)"]
+    M --> G["Greedy decode"]
+    G --> A --> U
 ```
 
 ---
 
 ## Prerequisites
 
-1. **Environment** — the project venv (created by `../uv_bootstrap.bat`). Same deps
-   as training: `torch`, `transformers`, `peft`, `sentencepiece`, `accelerate`.
-2. **The trained adapter.** Default location:
-   `../training/runs/llava15_lora/final_adapter`.
-   ⚠️ `training/runs/` is **gitignored**, so the adapter does **not** travel with
-   the repo. To deploy elsewhere, copy that `final_adapter/` folder along (it is
-   only ~20 MB) and point `--adapter-dir` at it.
-3. **Base model.** `llava-hf/llava-1.5-7b-hf` (~14 GB). Auto-downloaded on first
-   run into `../training/hf_cache`. The adapter alone is useless without it.
-4. **Hardware.** GPU with ~14–16 GB VRAM for fp16 (recommended). CPU works but is
-   very slow (minutes per page) — fine for occasional use, not for serving.
+1. **Install deps** (adds FastAPI + uvicorn to the project env):
+   ```bash
+   ../uv_bootstrap.bat        # or:  uv sync   from the project root
+   ```
+2. **A trained artifact**, one of:
+   - the LoRA adapter at `../training/runs/llava15_lora/final_adapter` (default), or
+   - a fused model at `deploy/merged_model` (recommended for production — see below).
+   ⚠️ `training/runs/` is **gitignored**, so the adapter does not ship with the
+   repo. Copy `final_adapter/` (~20 MB) along when deploying elsewhere.
+3. **Base model** `llava-hf/llava-1.5-7b-hf` (~14 GB), auto-downloaded to
+   `../training/hf_cache` on first run. Required for adapter mode; baked in for a
+   fused model.
+4. **Hardware**: GPU with ~14–16 GB VRAM for fp16. CPU works but is slow.
 
 ---
 
-## Option A — one-off from the command line
+## Recommended: fuse the adapter for production
 
-```bash
-# from deploy/
-../.venv/Scripts/python.exe infer.py --text "EONFIDENTIAt (newline) FM AMEMBASSY MOSCOW ..."
-```
-
-From a file (best for long/noisy pages — paste the OCR into a `.txt` first):
-
-```bash
-../.venv/Scripts/python.exe infer.py --text-file page.txt
-```
-
-From stdin (pipe):
-
-```bash
-echo "EONFIDENTIAt (newline) FM AMEMBASSY MOSCOW ..." | ../.venv/Scripts/python.exe infer.py --text-file -
-```
-
-## Option B — interactive (paste pages, get summaries)
-
-```bash
-../.venv/Scripts/python.exe infer.py
-# OCR> <paste one OCR page, press Enter>
-# === Summary === ...
-# OCR> quit
-```
-
-The model loads once and stays resident, so each subsequent page is fast.
-
-## Option C — HTTP microservice (integrate into an app)
-
-Start it (model loads once at startup):
-
-```bash
-../.venv/Scripts/python.exe serve.py --host 127.0.0.1 --port 8008
-```
-
-Call it from anything:
-
-```bash
-curl -s -X POST http://127.0.0.1:8008/summarize \
-     -H "Content-Type: application/json" \
-     -d "{\"ocr_text\": \"EONFIDENTIAt (newline) FM AMEMBASSY MOSCOW ...\"}"
-# -> {"summary": "This classified report ..."}
-
-curl -s http://127.0.0.1:8008/health
-# -> {"status": "ok", "device": "cuda"}
-```
-
-Stdlib only (no FastAPI/Flask). It binds to localhost by default — put it behind a
-real reverse proxy / auth before exposing it.
-
-## Option D — standalone merged model (no PEFT at runtime)
-
-Bake the adapter into the base weights for a portable, dependency-light artifact:
+For "use the whole model with the fused adapter", merge once:
 
 ```bash
 ../.venv/Scripts/python.exe merge_adapter.py --out merged_model
-../.venv/Scripts/python.exe infer.py  --merged-model merged_model --text-file page.txt
-../.venv/Scripts/python.exe serve.py  --merged-model merged_model
 ```
 
-Trade-off: the merged model is the full ~14 GB fp16 LLaVA on disk (vs. the ~20 MB
-adapter), but it loads a little faster and needs no `peft` at inference time.
+This writes a self-contained ~14 GB model to `deploy/merged_model`. From then on
+`app.py`, `infer.py`, and `inspect_weights.py` **auto-detect and prefer it** (no
+PEFT at runtime, slightly faster). Without it, they fall back to the adapter.
+
+---
+
+## Run the service + front-end
+
+```bash
+../.venv/Scripts/python.exe app.py                      # http://127.0.0.1:8008
+../.venv/Scripts/python.exe app.py --host 0.0.0.0 --port 9000
+# or:  ../.venv/Scripts/python.exe -m uvicorn app:app --port 8008
+```
+
+Open **http://127.0.0.1:8008** — pick an OCR row on the left, read its reference
+summary, click **Run inference** to see the adapter's output (or tick *auto-run on
+select*). The header shows the live model status (mode, params, dtype, device,
+VRAM). On startup the server loads the model + dataset once and **prints a model
+summary and sample weights** to the console.
+
+The dataset is read from `output/Release_1_OCR.csv` and
+`output/Release_1_SUMMARIES.csv` by default; override with the env vars
+`DEPLOY_OCR_CSV` / `DEPLOY_SUMMARIES_CSV`.
+
+### JSON API
+
+```bash
+# inference on arbitrary OCR text
+curl -s -X POST http://127.0.0.1:8008/api/summarize \
+     -H "Content-Type: application/json" \
+     -d "{\"ocr_text\": \"EONFIDENTIAt (newline) FM AMEMBASSY MOSCOW ...\"}"
+# -> {"summary": "This classified report ...", "elapsed_ms": 812.4, "input_chars": 1958}
+
+curl -s http://127.0.0.1:8008/api/health         # {"status":"ok","device":"cuda"}
+curl -s http://127.0.0.1:8008/api/model-info      # params, dtype, device, VRAM, mode
+curl -s "http://127.0.0.1:8008/api/rows?limit=50" # dataset list (OCR + summary previews)
+curl -s http://127.0.0.1:8008/api/row/0           # one pair: full OCR + reference summary
+curl -s "http://127.0.0.1:8008/api/weights?filter=q_proj&limit=12"
+```
+
+Interactive API docs are served by FastAPI at **/docs**.
+
+> Concurrency: GPU generation is serialized with a lock, so the service handles
+> overlapping requests safely (one generation at a time). For higher throughput,
+> run multiple workers/replicas behind a proxy. Bind to localhost and add a
+> reverse proxy + auth before exposing it publicly.
+
+---
+
+## Inspect the weights
+
+When deploying you can print and inspect the live weights three ways:
+
+- **On startup** — `app.py` calls `print_summary()` automatically.
+- **CLI** — `../.venv/Scripts/python.exe inspect_weights.py --filter q_proj --limit 20`
+  (use `--filter lora_` to see the adapter deltas in adapter mode).
+- **HTTP** — `GET /api/weights?filter=<name>&limit=<n>` returns each tensor's
+  shape, dtype, numel, mean, std, and L2 norm.
+
+`infer.py --inspect` also prints the summary before running a one-off generation.
 
 ---
 
 ## Use it from your own Python code
 
 ```python
-from infer import Summarizer          # run from deploy/, or add deploy/ to sys.path
+from infer import Summarizer, resolve_source
 
-summarizer = Summarizer()             # loads base + adapter once
-text = "EONFIDENTIAt (newline) FM AMEMBASSY MOSCOW ..."
-print(summarizer.summarize(text))     # -> one-paragraph summary
+summarizer = Summarizer(**resolve_source())   # fused if present, else adapter
+print(summarizer.summarize("EONFIDENTIAt (newline) FM AMEMBASSY MOSCOW ..."))
+print(summarizer.model_info())
 ```
 
-Construct `Summarizer(...)` once and reuse it for many pages — loading the model
-is the slow part; `summarize()` is cheap.
+Build the `Summarizer` once and reuse it — loading is the slow part.
 
 ---
 
 ## Good to know
 
-- **Input format:** feed the OCR exactly as your pipeline emits it — the noisy
-  `(newline)` markers and garbled `CONFIDENTIAL` spellings are what the model was
-  trained on, so leave them in.
-- **Long pages are handled:** OCR longer than the token budget is truncated
-  head + tail automatically; nothing errors on oversized input.
-- **Deterministic:** decoding is greedy (`do_sample=False`), so the same input
-  gives the same summary every run.
-- **Text only:** the page image is not used — only the OCR text. You do **not**
-  need the PNGs at inference time.
-- **Quality ceiling:** the reference summaries used for training were generated by
-  another model (gemma via Ollama), so this adapter reproduces that summarization
-  style. Spot-check important outputs for faithfulness; summarizers can hallucinate
-  on very noisy OCR.
-- **Keep inference settings matched to training:** `INSTRUCTION`, `--max-length`
-  (2048), and the head+tail truncation in `infer.py` mirror the trainer. Changing
-  the instruction wording will degrade quality.
+- **Input format:** feed OCR exactly as your pipeline emits it (keep the
+  `(newline)` markers and garbled spellings — that's the training distribution).
+- **Long pages** are auto-truncated head + tail to fit the token budget.
+- **Deterministic:** greedy decoding (`do_sample=False`) → same input, same output.
+- **Text only:** the page image is not used; you don't need the PNGs at inference.
+- **Quality ceiling:** reference summaries were generated by gemma (via Ollama), so
+  this model reproduces that style — spot-check important outputs for faithfulness.
+- **Keep inference matched to training:** `INSTRUCTION`, `max_length=2048`, and the
+  head+tail truncation in `infer.py` mirror the trainer; changing them hurts quality.
