@@ -48,9 +48,13 @@ flowchart LR
    - a fused model at `deploy/merged_model` (recommended for production — see below).
    ⚠️ `training/runs/` is **gitignored**, so the adapter does not ship with the
    repo. Copy `final_adapter/` (~20 MB) along when deploying elsewhere.
-3. **Base model** `llava-hf/llava-1.5-7b-hf` (~14 GB), auto-downloaded to
-   `../training/hf_cache` on first run. Required for adapter mode; baked in for a
-   fused model.
+3. **Base model** `llava-hf/llava-1.5-7b-hf` (~14 GB, public on Hugging Face
+   Hub — not something you trained). In adapter mode, `infer.py` explicitly
+   fetches it via `huggingface_hub.snapshot_download` into `../training/hf_cache`
+   (git-ignored) the first time the server starts, with progress logged to the
+   console; later runs are a fast cache check, no re-download. Not needed for a
+   fused model (baked in). Requires internet access and ~14 GB free disk on
+   first run.
 4. **Hardware**: GPU with ~14–16 GB VRAM for fp16. CPU works but is slow.
 
 ---

@@ -65,6 +65,17 @@ The model loads once at startup; GPU generation is serialized with a lock.
 Prefer the fused model: `python merge_adapter.py --out merged_model` writes a
 self-contained ~14 GB model that `app.py`/`infer.py` auto-detect and prefer.
 
+### Two different weight sources — do not confuse them
+
+| Weight | What it is | Where it comes from | Where it lives |
+| ------ | ---------- | -------------------- | --------------- |
+| **LoRA adapter** (~40 MB) | The model **you trained** on this machine (`training/train_llava15_lora.py`) | Never downloaded — it must already exist locally, or be copied in from wherever training ran | `training/runs/llava15_lora/final_adapter/` (git-ignored) |
+| **Base model** (~14 GB) | Public, untrained `llava-hf/llava-1.5-7b-hf` | Fetched from Hugging Face Hub the first time the adapter server starts, via `ensure_base_model_cached()` in `deploy/infer.py` (`huggingface_hub.snapshot_download`) | `training/hf_cache/` (git-ignored) |
+
+`ensure_base_model_cached()` runs before `LlavaForConditionalGeneration.from_pretrained(base_id, ...)` in `Summarizer.__init__` (adapter-mode only — a fused model doesn't need the public base weights at all). It logs what it's doing and raises a clear `RuntimeError` (not a raw traceback) on network/disk failure. Subsequent runs are a fast cache check — `snapshot_download` compares hub metadata before deciding what to fetch, so nothing re-downloads once cached.
+
+If `training/runs/llava15_lora/final_adapter/` is missing, `Summarizer` raises `FileNotFoundError` immediately — that's a **local artifact problem**, never a network/download problem. Copy the adapter in (or point `--adapter-dir` at it) rather than expecting a fetch.
+
 ## Conventions & guardrails
 
 - **uv only** for deps; respect the pinned CUDA index in `pyproject.toml`. Don't
@@ -81,8 +92,10 @@ self-contained ~14 GB model that `app.py`/`infer.py` auto-detect and prefer.
   distribution). Greedy decoding (`do_sample=False`) makes output deterministic.
 - **Never commit large artifacts** (already in `.gitignore`): `*.pdf`, `*.png`,
   `*.csv`, `*.pt`, `*.safetensors`, `.venv/`, `training/runs/`, `training/hf_cache/`,
-  `deploy/merged_model/`. The adapter (~20 MB) and fused model (~14 GB) ship out
-  of band.
+  `deploy/merged_model/`. The adapter (~40 MB) ships by copying it alongside the
+  code (e.g. into a distribution); the base model (~14 GB) is never shipped —
+  it's fetched from Hugging Face Hub on first run (see "Two different weight
+  sources" above).
 - **Text-only at inference:** despite the LLaVA base, the page image is not used
   for generation — you don't need the PNGs to run `/api/summarize`.
 
