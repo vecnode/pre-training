@@ -76,6 +76,44 @@ def truncate_ocr_ids(ids: list[int], budget: int) -> list[int]:
     return ids[:head] + ids[-tail:]
 
 
+def ensure_base_model_cached(base_id: str) -> str:
+    """Ensure the public base model is present in the local Hugging Face cache,
+    downloading it on first run if missing. The cache dir is HF_HOME (defaults
+    to training/hf_cache, git-ignored in both a dev checkout and a distributed
+    build - it is resolved relative to this file, so it works in either layout).
+
+    Deliberately does NOT pass `cache_dir=` to snapshot_download: doing so makes
+    huggingface_hub treat that path as the raw hub-cache root, bypassing its
+    normal `<HF_HOME>/hub` layout - which silently creates a second, differently
+    laid out copy of the same ~14 GB model alongside the one `from_pretrained()`
+    already manages, instead of reusing it. Leaving cache_dir unset makes this
+    function resolve the cache exactly the way `from_pretrained(base_id, ...)`
+    does later in this same function (both read HF_HOME/HF_HUB_CACHE from the
+    environment), so a model already cached by either call is recognized by
+    the other with no re-download and no duplicate storage.
+
+    This is a no-op (fast, no network transfer) once the model is cached -
+    huggingface_hub checks file hashes/etags before deciding what to fetch. Only
+    the base model goes through this path; the trained LoRA adapter is never
+    downloaded - it is a local artifact that must already exist on disk (copied
+    in, or produced by training/train_llava15_lora.py on this machine).
+    """
+    from huggingface_hub import snapshot_download
+
+    print(f"Checking base model cache: {base_id} (HF_HOME={os.environ.get('HF_HOME')})")
+    try:
+        local_path = snapshot_download(repo_id=base_id)
+    except Exception as exc:  # network/space/auth failures - fail with a clear message
+        raise RuntimeError(
+            f"Failed to fetch base model '{base_id}' from Hugging Face Hub.\n"
+            f"This is a one-time ~14 GB download into {os.environ.get('HF_HOME')}.\n"
+            f"Check internet access and available disk space, then retry.\n"
+            f"Underlying error: {exc}"
+        ) from exc
+    print(f"Base model ready at: {local_path}")
+    return local_path
+
+
 def read_base_model_id(adapter_dir: Path, fallback: str) -> str:
     if fallback:
         return fallback
@@ -128,6 +166,7 @@ class Summarizer:
                     "training/runs/ is gitignored - copy the trained adapter here or pass --adapter-dir."
                 )
             base_id = read_base_model_id(adapter, base_model_id)
+            ensure_base_model_cached(base_id)
             self.processor = AutoProcessor.from_pretrained(adapter)
             model = LlavaForConditionalGeneration.from_pretrained(base_id, torch_dtype=dtype)
             model = PeftModel.from_pretrained(model, str(adapter))
