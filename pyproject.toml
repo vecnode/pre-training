@@ -5,7 +5,9 @@ description = "Local OCR and YOLO preprocessing pipeline"
 requires-python = ">=3.10"
 dependencies = [
   "accelerate>=0.33.0",
-  "easyocr>=1.7.2",
+  "addict>=2.4.0",
+  "easydict>=1.13",
+  "einops>=0.8.2",
   "fastapi>=0.115.0",
   "huggingface-hub>=0.25.0",
   "numpy>=1.26.0",
@@ -15,7 +17,7 @@ dependencies = [
   "sentencepiece>=0.2.0",
   "torch==2.11.0",
   "torchvision==0.26.0",
-  "transformers>=4.45.0",
+  "transformers>=4.57.1",
   "ultralytics>=8.3.0",
   "uvicorn[standard]>=0.30.0",
 ]
