@@ -6,7 +6,7 @@
 Local, GPU-first pipeline that turns a PDF corpus into training data and fine-tunes a LLaVA 1.5 7B LoRA adapter (OCR text → summary), served over a FastAPI inference endpoint.
 
 - Convert a PDF dataset into PNG pages
-- OCR PNG pages with Baidu Unlimited-OCR
+- OCR PNG pages with Surya OCR
 - Detect objects on PNG pages with YOLO (ultralytics)
 - Summarize OCR text via the Ollama API (gemma)
 - Fine-tune a LLaVA 1.5 7B LoRA adapter on (OCR text → summary) pairs
@@ -15,16 +15,27 @@ Local, GPU-first pipeline that turns a PDF corpus into training data and fine-tu
 ## Folder structure
 
 - `DATASET/`: Input PDFs (example: `Release_1/`).
-- `outputs/[timestamp]_[dataset]/`: PNG pages from one conversion run, named `[slug]-page-[n].png`.
-- `output/`: Generated CSVs (`DATASET_1_OCR.csv`, `DATASET_OBJS.csv`, `DATASET_SUMMARIES.csv`).
+- `outputs/[timestamp]_[dataset]/`: everything produced from one PDF dataset,
+  self-contained in a single folder:
+  - `[slug]-page-[n].png` — the converted pages.
+  - `[timestamp]_[dataset]-OCR.csv` — OCR text per page (Surya OCR).
+  - `[timestamp]_[dataset]-OBJS.csv` — YOLO object detections per page.
+- `output/`: Generated summaries CSV (`DATASET_SUMMARIES.csv`) from the later
+  Ollama summarization step.
+
+Keeping the PNGs and their CSVs in the same timestamped folder means each
+`outputs/[timestamp]_[dataset]/` is a complete, portable unit for that run, and
+re-running a step against the same folder resumes instead of colliding with a
+different run of a similarly-named dataset.
 
 
 ## Run Files
 
 ```bat
 uv_setup.bat     :: create/sync local venv, install CUDA torch, validate CUDA
-exec_1.bat       :: Step 1 - Convert PDF dataset to PNG pages
-exec_2.bat       :: Step 2 - OCR PNG pages with Baidu Unlimited-OCR
+exec_1.bat       :: Step 1 - Convert PDF dataset to PNG pages (resumable)
+exec_2.bat       :: Step 2 - OCR PNG pages with Surya OCR (resumable)
+exec_3.bat       :: Step 3 - YOLO object detection on PNG pages (resumable)
 main.bat         :: interactive menu covering all pipeline steps
 ```
 

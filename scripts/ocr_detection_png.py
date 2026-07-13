@@ -1,32 +1,18 @@
-"""Extract text from PNG images in Release_1_PNG using Baidu Unlimited-OCR."""
+"""Extract text from PNG images in Release_1_PNG using Surya OCR."""
 from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sys
-import tempfile
 import time
 from pathlib import Path
 
-import torch
-from transformers import AutoModel, AutoTokenizer
-
+CSV_FIELDS = ["image", "full_path", "status", "reason", "method", "confidence", "text"]
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_IMAGE_DIR = PROJECT_ROOT / "Release_1_PNG"
 DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "DATASET_1_OCR.csv"
-CSV_FIELDS = ["image", "full_path", "status", "reason", "method", "confidence", "text"]
-DEFAULT_MODEL_ID = "baidu/Unlimited-OCR"
-DEFAULT_PROMPT = "<image>Free OCR. "
-DEFAULT_MAX_LENGTH = 8192
-DEFAULT_NO_REPEAT_NGRAM_SIZE = 35
-DEFAULT_NGRAM_WINDOW = 128
-
-# gundam crops a high-res image into tiles (better for dense text pages);
-# base resizes the whole page to one square (faster, coarser).
-IMAGE_MODE_CONFIGS = {
-    "gundam": dict(base_size=1024, image_size=640, crop_mode=True),
-    "base": dict(base_size=1024, image_size=1024, crop_mode=False),
-}
+DEFAULT_BATCH_SIZE = 32
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,38 +41,15 @@ def parse_args() -> argparse.Namespace:
         help="Reprocess images even if already present in the output file",
     )
     parser.add_argument(
-        "--model-id",
-        default=DEFAULT_MODEL_ID,
-        help="Hugging Face model id or local path for Unlimited-OCR",
-    )
-    parser.add_argument(
-        "--prompt",
-        default=DEFAULT_PROMPT,
-        help="Prompt sent with each image, e.g. '<image>Free OCR. ' or '<image>document parsing.'",
-    )
-    parser.add_argument(
-        "--image-mode",
-        choices=list(IMAGE_MODE_CONFIGS),
-        default="gundam",
-        help="gundam: tiled crops for dense pages (recommended). base: single resized page.",
-    )
-    parser.add_argument(
-        "--max-length",
+        "--batch-size",
         type=int,
-        default=DEFAULT_MAX_LENGTH,
-        help="Max generated sequence length (model+prompt+output tokens)",
+        default=DEFAULT_BATCH_SIZE,
+        help="Number of pages OCR'd together per batch (higher = more throughput, more VRAM)",
     )
     parser.add_argument(
-        "--no-repeat-ngram-size",
-        type=int,
-        default=DEFAULT_NO_REPEAT_NGRAM_SIZE,
-        help="Sliding-window no-repeat ngram size (0 disables)",
-    )
-    parser.add_argument(
-        "--ngram-window",
-        type=int,
-        default=DEFAULT_NGRAM_WINDOW,
-        help="Sliding-window size for the no-repeat ngram check",
+        "--no-gpu",
+        action="store_true",
+        help="Force CPU inference (slow; Surya otherwise auto-detects CUDA)",
     )
     return parser.parse_args()
 
@@ -207,51 +170,55 @@ def count_pdfs(image_dir: Path) -> int:
     return sum(1 for _ in image_dir.glob("*.pdf"))
 
 
-def load_model(model_id: str):
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
-        model_id,
-        trust_remote_code=True,
-        use_safetensors=True,
-        torch_dtype=torch.bfloat16,
-    )
-    model = model.eval().cuda()
-    return tokenizer, model
+def load_predictors(use_gpu: bool):
+    if not use_gpu:
+        os.environ.setdefault("TORCH_DEVICE", "cpu")
+
+    from surya.detection import DetectionPredictor
+    from surya.foundation import FoundationPredictor
+    from surya.recognition import RecognitionPredictor
+
+    foundation_predictor = FoundationPredictor()
+    recognition_predictor = RecognitionPredictor(foundation_predictor)
+    detection_predictor = DetectionPredictor()
+    return recognition_predictor, detection_predictor
 
 
-def run_ocr(
-    tokenizer,
-    model,
-    image_path: Path,
-    scratch_dir: Path,
-    prompt: str,
-    image_mode: str,
-    max_length: int,
-    no_repeat_ngram_size: int,
-    ngram_window: int,
-) -> tuple[str, str, float, str, str]:
-    mode_cfg = IMAGE_MODE_CONFIGS[image_mode]
+def ocr_batch(recognition_predictor, detection_predictor, image_paths: list[Path]) -> list[tuple[str, str, float, str, str]]:
+    from PIL import Image
+
+    images = [Image.open(path).convert("RGB") for path in image_paths]
     try:
-        outputs = model.infer(
-            tokenizer,
-            prompt=prompt,
-            image_file=str(image_path),
-            output_path=str(scratch_dir),
-            base_size=mode_cfg["base_size"],
-            image_size=mode_cfg["image_size"],
-            crop_mode=mode_cfg["crop_mode"],
-            max_length=max_length,
-            no_repeat_ngram_size=no_repeat_ngram_size,
-            ngram_window=ngram_window,
-            eval_mode=True,
-        )
-    except Exception as exc:
-        return "error", str(exc), 0.0, "", f"[OCR error: {exc}]"
+        predictions = recognition_predictor(images, det_predictor=detection_predictor)
+    finally:
+        for image in images:
+            image.close()
 
-    text = (outputs or "").strip()
-    if not text:
-        return "empty", "no text detected", 0.0, image_mode, ""
-    return "ok", image_mode, 0.0, image_mode, text
+    results = []
+    for prediction in predictions:
+        lines = [line for line in prediction.text_lines if line.text and line.text.strip()]
+        if not lines:
+            results.append(("empty", "no text detected", 0.0, "surya", ""))
+            continue
+        text = "\n".join(line.text.strip() for line in lines)
+        confidence = round(sum(float(line.confidence) for line in lines) / len(lines), 4)
+        results.append(("ok", "surya", confidence, "surya", text))
+    return results
+
+
+def ocr_batch_with_fallback(recognition_predictor, detection_predictor, image_paths: list[Path]) -> list[tuple[str, str, float, str, str]]:
+    try:
+        return ocr_batch(recognition_predictor, detection_predictor, image_paths)
+    except Exception:
+        # A single bad image (corrupt PNG, decode failure) can otherwise sink an
+        # entire batch; retry one at a time so the rest of the batch still saves.
+        results = []
+        for path in image_paths:
+            try:
+                results.extend(ocr_batch(recognition_predictor, detection_predictor, [path]))
+            except Exception as exc:
+                results.append(("error", str(exc), 0.0, "", f"[OCR error: {exc}]"))
+        return results
 
 
 def main() -> int:
@@ -292,49 +259,40 @@ def main() -> int:
         print("Nothing to do.", flush=True)
         return 0
 
-    if not torch.cuda.is_available():
-        print(
-            "CUDA is not available in the current Python environment. "
-            "Unlimited-OCR requires a GPU. Run uv_setup.bat to install CUDA-enabled PyTorch.",
-            file=sys.stderr,
-        )
-        return 1
+    import torch
 
-    device_name = torch.cuda.get_device_name(0)
-    print(f"Device: {device_name}", flush=True)
-    print(f"Loading Unlimited-OCR ({args.model_id}), image_mode={args.image_mode}...", flush=True)
-    tokenizer, model = load_model(args.model_id)
+    use_gpu = not args.no_gpu and torch.cuda.is_available()
+    if use_gpu:
+        print(f"Device: {torch.cuda.get_device_name(0)}", flush=True)
+    else:
+        print("Device: CPU", flush=True)
+
+    print(f"Loading Surya OCR (batch_size={args.batch_size})...", flush=True)
+    recognition_predictor, detection_predictor = load_predictors(use_gpu)
 
     normalize_existing_csv(output_path)
     ensure_header(output_path, image_dir)
     started = time.time()
     done = 0
 
-    with tempfile.TemporaryDirectory(prefix="unlimited_ocr_") as scratch:
-        scratch_dir = Path(scratch)
-        with output_path.open("a", encoding="utf-8", newline="") as out:
-            writer = csv.DictWriter(out, fieldnames=CSV_FIELDS, quoting=csv.QUOTE_MINIMAL)
-            for image_path in pending:
-                t0 = time.time()
-                status, reason, confidence, method, text = run_ocr(
-                    tokenizer,
-                    model,
-                    image_path,
-                    scratch_dir,
-                    args.prompt,
-                    args.image_mode,
-                    args.max_length,
-                    args.no_repeat_ngram_size,
-                    args.ngram_window,
-                )
+    with output_path.open("a", encoding="utf-8", newline="") as out:
+        writer = csv.DictWriter(out, fieldnames=CSV_FIELDS, quoting=csv.QUOTE_MINIMAL)
+        for batch_start in range(0, len(pending), args.batch_size):
+            batch = pending[batch_start:batch_start + args.batch_size]
+            t0 = time.time()
+            batch_results = ocr_batch_with_fallback(recognition_predictor, detection_predictor, batch)
+            elapsed = time.time() - t0
+
+            for image_path, (status, reason, confidence, method, text) in zip(batch, batch_results):
                 writer.writerow(format_row(image_path, image_dir, status, reason, method, confidence, text))
-                out.flush()
-                done += 1
-                elapsed = time.time() - t0
-                print(
-                    f"[{done}/{len(pending)}] {image_path.name} ({elapsed:.1f}s) {status}: {reason}",
-                    flush=True,
-                )
+            out.flush()
+
+            done += len(batch)
+            per_page = elapsed / max(1, len(batch))
+            print(
+                f"[{done}/{len(pending)}] batch of {len(batch)} ({elapsed:.1f}s, {per_page:.2f}s/page)",
+                flush=True,
+            )
 
     total = time.time() - started
     print(f"Done. Wrote {done} row(s) to {output_path} in {total:.1f}s", flush=True)

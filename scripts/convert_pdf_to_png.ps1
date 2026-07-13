@@ -370,8 +370,17 @@ while ($queue.Count -gt 0 -or $running.Count -gt 0) {
             }
 
             if ($saved.Count -gt 0) {
-                $null = & $PythonExe $ProcessPy --max-mb $MaxMb --max-dim $MaxDim --jobs $CompressJobs @saved 2>&1
-                if ($LASTEXITCODE -ne 0) { return 2 }
+                # Pass the (potentially hundreds of) page paths via a list file rather than
+                # command-line args - Windows' argument-length limit is easy to blow past
+                # once a single PDF has 100+ pages.
+                $listFile = Join-Path ([System.IO.Path]::GetTempPath()) ([System.IO.Path]::GetRandomFileName() + '.txt')
+                try {
+                    Set-Content -LiteralPath $listFile -Value $saved -Encoding UTF8
+                    $null = & $PythonExe $ProcessPy --max-mb $MaxMb --max-dim $MaxDim --jobs $CompressJobs --list-file $listFile 2>&1
+                    if ($LASTEXITCODE -ne 0) { return 2 }
+                } finally {
+                    Remove-Item -LiteralPath $listFile -Force -ErrorAction SilentlyContinue
+                }
             }
             return 0
         } -ArgumentList $item.Path, $dst, $item.Slug, $item.Dpi, $item.RangesCsv, $processPy, $maxMb, $maxDim, $pdfToPpm, $pythonExe, $compressJobs

@@ -1,6 +1,6 @@
 @echo off
 rem -----------------------------------------------------------------------------
-rem Step 2: OCR PNG pages with Baidu Unlimited-OCR.
+rem Step 2: OCR PNG pages with Surya OCR.
 rem Copyright (c) vecnode 2026
 rem -----------------------------------------------------------------------------
 setlocal EnableExtensions
