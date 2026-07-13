@@ -41,7 +41,7 @@ flowchart LR
 
 1. **Install deps** (adds FastAPI + uvicorn to the project env):
    ```bash
-   ../uv_bootstrap.bat        # or:  uv sync   from the project root
+   ../uv_setup.bat            # or:  uv sync   from the project root
    ```
 2. **A trained artifact**, one of:
    - the LoRA adapter at `../training/runs/llava15_lora/final_adapter` (default), or

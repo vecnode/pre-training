@@ -28,9 +28,10 @@ if "%DATASET_PATH%"=="" (
 
 echo.
 rem Execute converter PowerShell wrapper.
-echo Output folder will be created automatically as:
-echo   [dataset_name]_PNG
-echo If it already exists, conversion will resume.
+echo If a previous run for this dataset exists under outputs\, you will be
+echo asked whether to resume it. Otherwise a new folder is created as:
+echo   outputs\[timestamp]_[dataset_name]
+echo Filenames are normalized to lowercase "slug-page-N.png".
 echo.
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%convert_pdf_to_png.ps1" -DatasetPath "%DATASET_PATH%" -PythonExe "%UFO_PYTHON%"

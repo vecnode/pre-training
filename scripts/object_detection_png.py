@@ -276,7 +276,7 @@ def main() -> int:
     if not args.no_gpu and not torch.cuda.is_available():
         print(
             "CUDA is not available in the current Python environment. "
-            "Run uv_bootstrap.bat to install CUDA-enabled PyTorch, or use --no-gpu.",
+            "Run uv_setup.bat to install CUDA-enabled PyTorch, or use --no-gpu.",
             file=sys.stderr,
         )
         return 1

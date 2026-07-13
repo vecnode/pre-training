@@ -295,7 +295,7 @@ def main() -> int:
     if not torch.cuda.is_available():
         print(
             "CUDA is not available in the current Python environment. "
-            "Unlimited-OCR requires a GPU. Run uv_bootstrap.bat to install CUDA-enabled PyTorch.",
+            "Unlimited-OCR requires a GPU. Run uv_setup.bat to install CUDA-enabled PyTorch.",
             file=sys.stderr,
         )
         return 1

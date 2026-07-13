@@ -36,12 +36,19 @@ pinned to the CUDA 12.8 wheels in `pyproject.toml` — never let `uv sync` pull 
 CPU-only wheel (it silently disables GPU inference).
 
 ```bat
-uv_bootstrap.bat            :: create/sync .venv, install CUDA torch, validate CUDA
-main.bat                    :: interactive menu for the pipeline steps (1-5)
+uv_setup.bat                :: create/sync .venv, install CUDA torch, validate CUDA
+exec_1.bat                  :: Step 1 - Convert PDF dataset to PNG pages
+exec_2.bat                  :: Step 2 - OCR PNG pages with Baidu Unlimited-OCR
+main.bat                    :: interactive menu for all pipeline steps (1-5)
 ```
 
+Each `exec_N.bat` at the project root bootstraps the env via `uv_setup.bat`
+then calls the matching `scripts/*.bat` wrapper — a one-to-one, double-click
+entry point per pipeline step. `main.bat` remains as a menu covering every
+step, including ones that don't have an `exec_N.bat` yet.
+
 Pipeline steps are individual `scripts/*.bat` wrappers that call `scripts/*.py`
-through the local `.venv`. Run them via `main.bat` or directly with
+through the local `.venv`. Run them via `exec_N.bat`, `main.bat`, or directly with
 `.venv\Scripts\python.exe scripts\<name>.py`.
 
 ### Inference server (`deploy/`)
@@ -82,7 +89,7 @@ If `training/runs/llava15_lora/final_adapter/` is missing, `Summarizer` raises `
   add deps that drag in a CPU torch.
 - **Batch scripts** follow the existing style: `@echo off`,
   `setlocal EnableExtensions`, resolve `SCRIPT_DIR`/`PROJECT_DIR` from `%~dp0`,
-  call `uv_bootstrap.bat` before doing work, `exit /b 1` on failure. Keep the
+  call `uv_setup.bat` before doing work, `exit /b 1` on failure. Keep the
   `vecnode 2026` copyright header.
 - **Inference must match training:** the `INSTRUCTION` prompt, `max_length=2048`,
   and head+tail truncation in `infer.py` mirror the trainer. Changing them

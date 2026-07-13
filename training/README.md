@@ -13,7 +13,7 @@ always preserved in the training budget.
 ### 1) Install deps (once)
 
 ```bash
-../uv_bootstrap.bat
+../uv_setup.bat
 ```
 
 This installs project dependencies (including `transformers`, `peft`, `accelerate`, `sentencepiece`) through `uv sync`.

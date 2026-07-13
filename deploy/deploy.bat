@@ -29,17 +29,17 @@ if "%APP_PORT%"=="" set "APP_PORT=8008"
 title LoRA Adapter Inference Server
 
 rem Ensure the local uv environment + CUDA-ready torch are present.
-call "%PROJECT_DIR%\uv_bootstrap.bat"
+call "%PROJECT_DIR%\uv_setup.bat"
 if errorlevel 1 (
     echo.
-    echo UV bootstrap failed. Cannot start the inference server.
+    echo UV setup failed. Cannot start the inference server.
     exit /b 1
 )
 
 if not exist "%VENV_PY%" (
     echo.
     echo Local venv python not found at "%VENV_PY%".
-    echo Run uv_bootstrap.bat from the project root first.
+    echo Run uv_setup.bat from the project root first.
     exit /b 1
 )
 

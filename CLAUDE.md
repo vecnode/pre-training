@@ -14,9 +14,12 @@ in `AGENTS.md` — read it first.
   **metaagent** C++ controller (`vecnode/metaagent`). metaagent never imports
   this code — keep the `deploy/` HTTP contract (`/api/summarize`, `/api/health`,
   `/api/model-info`) and `deploy/deploy.bat` stable for it.
-- **Env:** uv only, GPU-first. `uv_bootstrap.bat` sets up `.venv` with CUDA
-  torch; `main.bat` runs the pipeline menu; `deploy\deploy.bat [host] [port]`
-  serves the model (default `:8008`).
+- **Env:** uv only, GPU-first. `uv_setup.bat` sets up `.venv` with CUDA torch;
+  each pipeline step also has a standalone `exec_N.bat` at the project root
+  (currently `exec_1.bat` = convert PDFs, `exec_2.bat` = OCR) that bootstraps
+  the env itself and can be double-clicked directly; `main.bat` runs the
+  interactive menu for all steps; `deploy\deploy.bat [host] [port]` serves the
+  model (default `:8008`).
 - **Two weight sources, don't confuse them:** the **LoRA adapter** (~40 MB,
   `training/runs/llava15_lora/final_adapter/`) is trained locally and only ever
   copied, never downloaded — if it's missing that's a local-artifact problem.

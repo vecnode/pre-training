@@ -2,6 +2,7 @@
 *.pdf
 Release_1/
 Release_1_PNG/
+outputs/
 conversion_log.txt
 output/*.md
 !output/README.md
