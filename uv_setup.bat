@@ -75,7 +75,7 @@ echo Verifying CUDA in local environment...
 if errorlevel 1 (
     echo.
     echo CUDA validation failed in .venv. GPU execution would fall back to CPU.
-    echo Check NVIDIA driver compatibility and rerun uv_bootstrap.bat.
+    echo Check NVIDIA driver compatibility and rerun uv_setup.bat.
     exit /b 1
 )
 

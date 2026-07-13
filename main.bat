@@ -9,10 +9,10 @@ rem Resolve repository root from this script location.
 set "SCRIPT_DIR=%~dp0"
 title Dataset Pre-Training Controller
 
-call "%SCRIPT_DIR%uv_bootstrap.bat"
+call "%SCRIPT_DIR%uv_setup.bat"
 if errorlevel 1 (
 	echo.
-	echo UV bootstrap failed. Exiting.
+	echo UV setup failed. Exiting.
 	pause
 	goto end
 )
@@ -29,7 +29,7 @@ echo.
 echo   [1] Convert PDFs to PNGs
 echo   [2] OCR text from PNGs
 echo   [3] YOLO object detection from PNGs
-echo   [4] UV bootstrap only (create/sync local env)
+echo   [4] UV setup only (create/sync local env)
 echo   [5] Summarize OCR CSV with Ollama
 echo   [0] Exit
 echo.
@@ -65,12 +65,12 @@ call "%SCRIPT_DIR%scripts\summarize_ocr_ollama.bat"
 goto menu
 
 :bootstrap
-call "%SCRIPT_DIR%uv_bootstrap.bat"
+call "%SCRIPT_DIR%uv_setup.bat"
 echo.
 if errorlevel 1 (
-	echo UV bootstrap failed.
+	echo UV setup failed.
 ) else (
-	echo UV bootstrap completed.
+	echo UV setup completed.
 )
 pause
 goto menu
