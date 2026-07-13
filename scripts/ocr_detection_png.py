@@ -1,24 +1,32 @@
-"""Extract text from PNG images in Release_1_PNG using EasyOCR."""
+"""Extract text from PNG images in Release_1_PNG using Baidu Unlimited-OCR."""
 from __future__ import annotations
 
 import argparse
 import csv
-import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
-import easyocr
-import numpy as np
-from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import torch
+from transformers import AutoModel, AutoTokenizer
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_IMAGE_DIR = PROJECT_ROOT / "Release_1_PNG"
 DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "DATASET_1_OCR.csv"
 CSV_FIELDS = ["image", "full_path", "status", "reason", "method", "confidence", "text"]
-DEFAULT_MAX_SIDE = 720
-DEFAULT_PROFILE = "fast"
+DEFAULT_MODEL_ID = "baidu/Unlimited-OCR"
+DEFAULT_PROMPT = "<image>Free OCR. "
+DEFAULT_MAX_LENGTH = 8192
+DEFAULT_NO_REPEAT_NGRAM_SIZE = 35
+DEFAULT_NGRAM_WINDOW = 128
+
+# gundam crops a high-res image into tiles (better for dense text pages);
+# base resizes the whole page to one square (faster, coarser).
+IMAGE_MODE_CONFIGS = {
+    "gundam": dict(base_size=1024, image_size=640, crop_mode=True),
+    "base": dict(base_size=1024, image_size=1024, crop_mode=False),
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,20 +44,10 @@ def parse_args() -> argparse.Namespace:
         help="CSV output file",
     )
     parser.add_argument(
-        "--lang",
-        default="en",
-        help="EasyOCR language code(s), comma-separated",
-    )
-    parser.add_argument(
         "--limit",
         type=int,
         default=0,
         help="Process only the first N pending images (0 = all)",
-    )
-    parser.add_argument(
-        "--no-gpu",
-        action="store_true",
-        help="Force CPU inference",
     )
     parser.add_argument(
         "--no-resume",
@@ -57,22 +55,38 @@ def parse_args() -> argparse.Namespace:
         help="Reprocess images even if already present in the output file",
     )
     parser.add_argument(
-        "--max-side",
+        "--model-id",
+        default=DEFAULT_MODEL_ID,
+        help="Hugging Face model id or local path for Unlimited-OCR",
+    )
+    parser.add_argument(
+        "--prompt",
+        default=DEFAULT_PROMPT,
+        help="Prompt sent with each image, e.g. '<image>Free OCR. ' or '<image>document parsing.'",
+    )
+    parser.add_argument(
+        "--image-mode",
+        choices=list(IMAGE_MODE_CONFIGS),
+        default="gundam",
+        help="gundam: tiled crops for dense pages (recommended). base: single resized page.",
+    )
+    parser.add_argument(
+        "--max-length",
         type=int,
-        default=DEFAULT_MAX_SIDE,
-        help="Resize the longest image side to this many pixels before OCR (0 disables resizing)",
+        default=DEFAULT_MAX_LENGTH,
+        help="Max generated sequence length (model+prompt+output tokens)",
     )
     parser.add_argument(
-        "--profile",
-        choices=["fast", "balanced", "quality"],
-        default=DEFAULT_PROFILE,
-        help="OCR speed/quality profile: fast (recommended), balanced, or quality",
+        "--no-repeat-ngram-size",
+        type=int,
+        default=DEFAULT_NO_REPEAT_NGRAM_SIZE,
+        help="Sliding-window no-repeat ngram size (0 disables)",
     )
     parser.add_argument(
-        "--detect-network",
-        choices=["dbnet18", "craft"],
-        default="dbnet18",
-        help="EasyOCR detector network. dbnet18 is faster; craft may improve difficult pages",
+        "--ngram-window",
+        type=int,
+        default=DEFAULT_NGRAM_WINDOW,
+        help="Sliding-window size for the no-repeat ngram check",
     )
     return parser.parse_args()
 
@@ -110,124 +124,6 @@ def relative_display_path(image_path: Path, image_dir: Path) -> str:
     except ValueError:
         rel = image_path.name
     return rel.as_posix().replace("/", "\\")
-
-
-def resize_to_max_side(image: Image.Image, max_side: int) -> Image.Image:
-    if max_side <= 0:
-        return image
-    width, height = image.size
-    longest = max(width, height)
-    if longest <= max_side:
-        return image
-    scale = max_side / float(longest)
-    new_size = (max(1, int(round(width * scale))), max(1, int(round(height * scale))))
-    return image.resize(new_size, Image.Resampling.LANCZOS)
-
-
-def preprocess_variants(image_path: Path, max_side: int, profile: str) -> list[tuple[str, np.ndarray]]:
-    with Image.open(image_path) as image:
-        rgb = resize_to_max_side(image.convert("RGB"), max_side)
-        gray = ImageOps.grayscale(rgb)
-        enhanced = ImageEnhance.Contrast(gray).enhance(1.8)
-        sharpened = enhanced.filter(ImageFilter.SHARPEN)
-        autocontrast = ImageOps.autocontrast(gray)
-        threshold = autocontrast.point(lambda value: 255 if value > 165 else 0)
-
-        suffix = f"@{max_side}" if max_side > 0 else ""
-        if profile == "fast":
-            return [
-                (f"gray{suffix}", np.array(gray)),
-                (f"rgb{suffix}", np.array(rgb)),
-            ]
-        if profile == "balanced":
-            return [
-                (f"gray{suffix}", np.array(gray)),
-                (f"rgb{suffix}", np.array(rgb)),
-                (f"contrast{suffix}", np.array(enhanced)),
-            ]
-        return [
-            (f"rgb{suffix}", np.array(rgb)),
-            (f"gray{suffix}", np.array(gray)),
-            (f"contrast{suffix}", np.array(enhanced)),
-            (f"sharpen{suffix}", np.array(sharpened)),
-            (f"threshold{suffix}", np.array(threshold)),
-        ]
-
-
-def flatten_ocr_items(items: object) -> list[tuple[str, float]]:
-    if isinstance(items, tuple):
-        if len(items) >= 3 and isinstance(items[1], str):
-            try:
-                confidence = float(items[2])
-            except (TypeError, ValueError):
-                confidence = 0.0
-            return [(items[1], confidence)]
-        flattened: list[tuple[str, float]] = []
-        for item in items:
-            flattened.extend(flatten_ocr_items(item))
-        return flattened
-    if isinstance(items, list):
-        flattened = []
-        for item in items:
-            flattened.extend(flatten_ocr_items(item))
-        return flattened
-    if isinstance(items, str):
-        return [(items, 0.0)]
-    return []
-
-
-def is_dbnet_extension_error(message: str) -> bool:
-    lowered = message.lower()
-    markers = [
-        "deform_conv_cuda",
-        "deform_pool_cuda",
-        "dbnet",
-        "where', 'cl'",
-        "input type is cuda",
-    ]
-    return any(marker in lowered for marker in markers)
-
-
-def score_ocr(lines: object) -> tuple[str, float]:
-    flattened = flatten_ocr_items(lines)
-    text = "\n\n".join(piece.strip() for piece, _ in flattened if piece and piece.strip()).strip()
-    if not text:
-        return "", 0.0
-    confidences = [float(conf) for piece, conf in flattened if piece and piece.strip()]
-    confidence = round(sum(confidences) / len(confidences), 4) if confidences else 0.0
-    return text, confidence
-
-
-def choose_best_ocr(
-    reader: easyocr.Reader, image_path: Path, max_side: int, profile: str
-) -> tuple[str, str, float, str, str]:
-    best_text = ""
-    best_reason = "no text detected"
-    best_confidence = 0.0
-    best_method = ""
-
-    for method, array in preprocess_variants(image_path, max_side, profile):
-        try:
-            lines = reader.readtext(array, detail=1, paragraph=True, decoder="greedy", beamWidth=1)
-        except Exception as exc:
-            if is_dbnet_extension_error(str(exc)):
-                raise RuntimeError(str(exc)) from exc
-            if not best_reason or best_reason == "no text detected":
-                best_reason = f"{method}: OCR error: {exc}"
-            continue
-
-        text, confidence = score_ocr(lines)
-        if not text:
-            continue
-        if confidence > best_confidence or (confidence == best_confidence and len(text) > len(best_text)):
-            best_text = text
-            best_confidence = confidence
-            best_method = method
-            best_reason = method
-
-    if best_text:
-        return "ok", best_reason, best_confidence, best_method, best_text
-    return "empty", best_reason, 0.0, "", ""
 
 
 def format_row(
@@ -311,13 +207,51 @@ def count_pdfs(image_dir: Path) -> int:
     return sum(1 for _ in image_dir.glob("*.pdf"))
 
 
-def create_reader(langs: list[str], use_gpu: bool, detect_network: str) -> easyocr.Reader:
-    return easyocr.Reader(
-        langs,
-        gpu=use_gpu,
-        verbose=False,
-        detect_network=detect_network,
+def load_model(model_id: str):
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        model_id,
+        trust_remote_code=True,
+        use_safetensors=True,
+        torch_dtype=torch.bfloat16,
     )
+    model = model.eval().cuda()
+    return tokenizer, model
+
+
+def run_ocr(
+    tokenizer,
+    model,
+    image_path: Path,
+    scratch_dir: Path,
+    prompt: str,
+    image_mode: str,
+    max_length: int,
+    no_repeat_ngram_size: int,
+    ngram_window: int,
+) -> tuple[str, str, float, str, str]:
+    mode_cfg = IMAGE_MODE_CONFIGS[image_mode]
+    try:
+        outputs = model.infer(
+            tokenizer,
+            prompt=prompt,
+            image_file=str(image_path),
+            output_path=str(scratch_dir),
+            base_size=mode_cfg["base_size"],
+            image_size=mode_cfg["image_size"],
+            crop_mode=mode_cfg["crop_mode"],
+            max_length=max_length,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            ngram_window=ngram_window,
+            eval_mode=True,
+        )
+    except Exception as exc:
+        return "error", str(exc), 0.0, "", f"[OCR error: {exc}]"
+
+    text = (outputs or "").strip()
+    if not text:
+        return "empty", "no text detected", 0.0, image_mode, ""
+    return "ok", image_mode, 0.0, image_mode, text
 
 
 def main() -> int:
@@ -358,88 +292,52 @@ def main() -> int:
         print("Nothing to do.", flush=True)
         return 0
 
-    if not args.no_gpu and not torch.cuda.is_available():
+    if not torch.cuda.is_available():
         print(
             "CUDA is not available in the current Python environment. "
-            "Run uv_bootstrap.bat to install CUDA-enabled PyTorch, or use --no-gpu.",
+            "Unlimited-OCR requires a GPU. Run uv_bootstrap.bat to install CUDA-enabled PyTorch.",
             file=sys.stderr,
         )
         return 1
 
-    use_gpu = not args.no_gpu
-    active_use_gpu = use_gpu
-    active_detect_network = args.detect_network
-    if active_detect_network == "dbnet18" and shutil.which("cl") is None:
-        print(
-            "MSVC compiler (cl.exe) not found. Switching detector to craft for stability.",
-            flush=True,
-        )
-        active_detect_network = "craft"
-    device_name = torch.cuda.get_device_name(0) if use_gpu else "cpu"
-    langs = [part.strip() for part in args.lang.split(",") if part.strip()]
-    print(f"Device: {device_name} (cuda={use_gpu})", flush=True)
-    print(
-        f"Loading EasyOCR ({', '.join(langs)}), gpu={active_use_gpu}, profile={args.profile}, detector={active_detect_network}...",
-        flush=True,
-    )
-    reader = create_reader(langs, active_use_gpu, active_detect_network)
+    device_name = torch.cuda.get_device_name(0)
+    print(f"Device: {device_name}", flush=True)
+    print(f"Loading Unlimited-OCR ({args.model_id}), image_mode={args.image_mode}...", flush=True)
+    tokenizer, model = load_model(args.model_id)
 
     normalize_existing_csv(output_path)
     ensure_header(output_path, image_dir)
     started = time.time()
     done = 0
 
-    with output_path.open("a", encoding="utf-8", newline="") as out:
-        writer = csv.DictWriter(out, fieldnames=CSV_FIELDS, quoting=csv.QUOTE_MINIMAL)
-        for image_path in pending:
-            t0 = time.time()
-            status = "error"
-            reason = "unknown"
-            method = ""
-            confidence = 0.0
-            text = ""
-
-            for _ in range(3):
-                try:
-                    status, reason, confidence, method, text = choose_best_ocr(
-                        reader, image_path, args.max_side, args.profile
-                    )
-                    break
-                except Exception as exc:
-                    msg = str(exc)
-                    if is_dbnet_extension_error(msg) and active_detect_network == "dbnet18":
-                        print(
-                            "DBNet extension unavailable. Switching detector to craft and retrying current image...",
-                            flush=True,
-                        )
-                        active_detect_network = "craft"
-                        reader = create_reader(langs, active_use_gpu, active_detect_network)
-                        continue
-                    if is_dbnet_extension_error(msg) and active_use_gpu:
-                        print(
-                            "Detector failed on GPU. Switching EasyOCR to CPU and retrying current image...",
-                            flush=True,
-                        )
-                        active_use_gpu = False
-                        reader = create_reader(langs, active_use_gpu, active_detect_network)
-                        continue
-                    status = "error"
-                    reason = msg
-                    method = ""
-                    confidence = 0.0
-                    text = f"[OCR error: {msg}]"
-                    break
-            writer.writerow(format_row(image_path, image_dir, status, reason, method, confidence, text))
-            out.flush()
-            done += 1
-            elapsed = time.time() - t0
-            print(
-                f"[{done}/{len(pending)}] {image_path.name} ({elapsed:.1f}s) {status}: {reason}",
-                flush=True,
-            )
+    with tempfile.TemporaryDirectory(prefix="unlimited_ocr_") as scratch:
+        scratch_dir = Path(scratch)
+        with output_path.open("a", encoding="utf-8", newline="") as out:
+            writer = csv.DictWriter(out, fieldnames=CSV_FIELDS, quoting=csv.QUOTE_MINIMAL)
+            for image_path in pending:
+                t0 = time.time()
+                status, reason, confidence, method, text = run_ocr(
+                    tokenizer,
+                    model,
+                    image_path,
+                    scratch_dir,
+                    args.prompt,
+                    args.image_mode,
+                    args.max_length,
+                    args.no_repeat_ngram_size,
+                    args.ngram_window,
+                )
+                writer.writerow(format_row(image_path, image_dir, status, reason, method, confidence, text))
+                out.flush()
+                done += 1
+                elapsed = time.time() - t0
+                print(
+                    f"[{done}/{len(pending)}] {image_path.name} ({elapsed:.1f}s) {status}: {reason}",
+                    flush=True,
+                )
 
     total = time.time() - started
-    print(f"Done. Wrote {done} row(s) to {output_path}", flush=True)
+    print(f"Done. Wrote {done} row(s) to {output_path} in {total:.1f}s", flush=True)
     return 0
 
 

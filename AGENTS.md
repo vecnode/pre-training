@@ -10,7 +10,7 @@ adapter** and its inference server. It turns a PDF corpus into training data and
 fine-tunes a vision-language model:
 
 1. Convert PDFs → PNG pages (`scripts/convert_pdf_to_png.*`).
-2. OCR the PNGs → `output/*_OCR.csv` (`scripts/ocr_detection_png.py`, easyocr).
+2. OCR the PNGs → `output/*_OCR.csv` (`scripts/ocr_detection_png.py`, [Baidu Unlimited-OCR](https://github.com/baidu/Unlimited-OCR)).
 3. YOLO object detection → `output/*_OBJS.csv` (`scripts/object_detection_png.py`, ultralytics).
 4. Summarize OCR via Ollama (gemma) → `output/*_SUMMARIES.csv` (the training target).
 5. Train a **LLaVA 1.5 7B LoRA** adapter on (OCR text → summary) pairs (`training/`).

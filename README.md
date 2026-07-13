@@ -1,10 +1,16 @@
 # Dataset Pre-Training Workspace
 
-Structured first-stage pre-training pipeline:
-1. Convert PDF dataset to PNG pages.
-2. Run OCR over PNG pages.
-3. Run YOLO object detection over PNG pages.
-4. Visual Instruction Tuning: Summarize OCR CSV content via Ollama API (gemma4:e4b).
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+
+Local, GPU-first pipeline that turns a PDF corpus into training data and fine-tunes a LLaVA 1.5 7B LoRA adapter (OCR text → summary), served over a FastAPI inference endpoint.
+
+- Convert a PDF dataset into PNG pages
+- OCR PNG pages with Baidu Unlimited-OCR
+- Detect objects on PNG pages with YOLO (ultralytics)
+- Summarize OCR text via the Ollama API (gemma)
+- Fine-tune a LLaVA 1.5 7B LoRA adapter on (OCR text → summary) pairs
+- Serve the adapter locally through a FastAPI inference server (`deploy/`)
 
 ## Folder structure
 
@@ -22,17 +28,6 @@ main.bat
 
 All operational batch and Python scripts are now under `scripts/`.
 
-
-## Dataset Output Types
-
-- Default write mode (`OCR` and `OBJ RECOG`): append/resume by image section (`--no-resume` disables resume and rewrites processing flow).
-- OCR output file: `output/DATASET_1_OCR.csv`.
-- OCR row structure: one image per row with columns `image`, `full_path`, `status`, `reason`, `method`, `confidence`, `text`.
-- OCR write mode: append/resume by image row (`--no-resume` disables resume and rewrites processing flow).
-- `status`/`reason` record whether OCR passed and which preprocessing variant won, or why it failed.
-- Object recognition output file: `output/DATASET_OBJS.csv`.
-- OBJ row structure: one object per row with `image`, `full_path`, `object_id`, `label`, `confidence`, `x`, `y`, `width`, `height`.
-- Summaries output file: `output/DATASET_SUMMARIES.csv` generated from `DATASET_OCR.csv` via Ollama HTTP API.
 
 ## License
 
