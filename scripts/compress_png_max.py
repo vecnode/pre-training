@@ -84,14 +84,26 @@ def _worker(args: tuple[str, float, int]) -> tuple[bool, str, float, float]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("paths", nargs="+")
+    parser.add_argument("paths", nargs="*", default=[])
+    parser.add_argument(
+        "--list-file",
+        type=Path,
+        default=None,
+        help="Text file with one PNG/directory path per line (avoids OS command-line length limits for large batches)",
+    )
     parser.add_argument("--max-mb", type=float, default=10.0)
     parser.add_argument("--max-dim", type=int, default=MAX_DIM_DEFAULT)
     parser.add_argument("--jobs", type=int, default=max(1, min(8, os.cpu_count() or 4)))
     args = parser.parse_args()
 
+    raw_paths = list(args.paths)
+    if args.list_file:
+        raw_paths.extend(
+            line.strip() for line in args.list_file.read_text(encoding="utf-8").splitlines() if line.strip()
+        )
+
     files: list[Path] = []
-    for raw in args.paths:
+    for raw in raw_paths:
         p = Path(raw)
         if p.is_dir():
             files.extend(sorted(p.glob("*.png")))

@@ -13,7 +13,7 @@ set "OUT_DIR=%ROOT_DIR%\output"
 title YOLO Object Detection on PNG Dataset
 echo.
 echo ======================================================
-echo   YOLO Detection (PNG -> output\DATASET_OBJS.csv)
+echo   YOLO Detection (PNG -^> output\DATASET_OBJS.csv)
 echo ======================================================
 echo.
 echo Enter dataset base name OR PNG folder path.
@@ -29,32 +29,17 @@ if "%DATASET_INPUT%"=="" (
 
 set "PNG_DIR="
 
-rem Resolve dataset input to a PNG folder path.
-if exist "%DATASET_INPUT%" (
-	if /I "%DATASET_INPUT:~-4%"=="_PNG" (
-		set "PNG_DIR=%DATASET_INPUT%"
-	) else if exist "%DATASET_INPUT%_PNG" (
-		set "PNG_DIR=%DATASET_INPUT%_PNG"
-	) else (
-		set "PNG_DIR=%DATASET_INPUT%"
-	)
-) else if exist "%ROOT_DIR%\%DATASET_INPUT%" (
-	if /I "%DATASET_INPUT:~-4%"=="_PNG" (
-		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%"
-	) else if exist "%ROOT_DIR%\%DATASET_INPUT%_PNG" (
-		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%_PNG"
-	) else (
-		set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%"
-	)
-) else if exist "%ROOT_DIR%\%DATASET_INPUT%_PNG" (
-	set "PNG_DIR=%ROOT_DIR%\%DATASET_INPUT%_PNG"
-)
+rem Resolve dataset input to a PNG folder path: exact path, path under the
+rem project root, legacy "<name>_PNG" convention, or newest matching
+rem outputs\<timestamp>_<slug> folder from convert_pdf_to_png.ps1.
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%resolve_png_dir.ps1" -DatasetInput "%DATASET_INPUT%" -ProjectRoot "%ROOT_DIR%"`) do set "PNG_DIR=%%P"
 
 if not exist "%PNG_DIR%" (
 	echo.
-	echo PNG dataset folder not found:
-	echo   %PNG_DIR%
-	echo Run convert_pdf_to_png.bat first.
+	echo PNG dataset folder not found for input: "%DATASET_INPUT%"
+	echo Looked for: an exact path, a path under the project root, the legacy
+	echo "<name>_PNG" convention, and outputs\[timestamp]_[slug] folders.
+	echo Run convert_pdf_to_png.bat / exec_1.bat first.
 	goto :end
 )
 
