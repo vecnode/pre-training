@@ -16,6 +16,16 @@ into training data:
    (`scripts/summarize_ocr_gemma.py`, a local Gemma 3 model — no Ollama/HTTP
    hop; default `unsloth/gemma-3-4b-it` is an ungated mirror, no `HF_TOKEN`
    needed) — this is the training target.
+4. Describe page layout/structure → `[timestamp]_[dataset]-LAYOUT.csv` in
+   that same folder (`scripts/describe_layout_gemma.py`, same Gemma 3 model
+   but image-grounded — the page PNG is fed to its vision tower instead of
+   OCR text, for tables/stamps/redaction/handwriting/letterhead structure).
+5. Generate synthetic QA pairs → `[timestamp]_[dataset]-QA.csv` in that same
+   folder (`scripts/generate_qa_gemma.py`, same Gemma 3 model, text-only from
+   OCR; one row per QA pair, several pairs per page).
+
+All four Gemma steps are additional training-data targets, not required in
+sequence — each only needs the OCR CSV (or PNGs, for layout) from step 1/2.
 
 Fine-tuning (LLaVA LoRA training) and serving live in the separate
 [`fine-tuning`](https://github.com/vecnode/fine-tuning) repo, which trains on
@@ -33,6 +43,8 @@ uv_setup.bat                :: create/sync .venv, install CUDA torch, validate C
 exec_1.bat                  :: Step 1 - Convert PDF dataset to PNG pages
 exec_2.bat                  :: Step 2 - OCR PNG pages with Surya OCR
 exec_3.bat                  :: Step 3 - Summarize OCR with local Gemma 3
+exec_4.bat                  :: Step 4 - Describe page layout with local Gemma 3 (image-grounded)
+exec_5.bat                  :: Step 5 - Generate synthetic QA pairs with local Gemma 3
 main.bat                    :: interactive menu for all pipeline steps
 ```
 

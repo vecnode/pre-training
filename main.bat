@@ -30,6 +30,8 @@ echo   [1] Convert PDFs to PNGs
 echo   [2] OCR text from PNGs
 echo   [3] UV setup only (create/sync local env)
 echo   [4] Summarize OCR CSV with local Gemma 3
+echo   [5] Describe page layout from PNGs with local Gemma 3
+echo   [6] Generate synthetic QA pairs from OCR CSV with local Gemma 3
 echo   [0] Exit
 echo.
 
@@ -39,10 +41,12 @@ if "%OPT%"=="1" goto convert
 if "%OPT%"=="2" goto ocr
 if "%OPT%"=="3" goto bootstrap
 if "%OPT%"=="4" goto summarize
+if "%OPT%"=="5" goto layout
+if "%OPT%"=="6" goto qa
 if "%OPT%"=="0" goto end
 
 echo.
-echo Invalid option. Please choose 0, 1, 2, 3, or 4.
+echo Invalid option. Please choose 0, 1, 2, 3, 4, 5, or 6.
 pause
 goto menu
 
@@ -56,6 +60,14 @@ goto menu
 
 :summarize
 call "%SCRIPT_DIR%scripts\summarize_ocr_gemma.bat"
+goto menu
+
+:layout
+call "%SCRIPT_DIR%scripts\describe_layout_gemma.bat"
+goto menu
+
+:qa
+call "%SCRIPT_DIR%scripts\generate_qa_gemma.bat"
 goto menu
 
 :bootstrap
