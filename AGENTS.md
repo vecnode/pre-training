@@ -9,12 +9,16 @@ A local, GPU-first **dataset pre-training pipeline** plus the **trained LoRA
 adapter** and its inference server. It turns a PDF corpus into training data and
 fine-tunes a vision-language model:
 
-1. Convert PDFs → PNG pages (`scripts/convert_pdf_to_png.*`).
-2. OCR the PNGs → `output/*_OCR.csv` (`scripts/ocr_detection_png.py`, [Surya OCR](https://github.com/datalab-to/surya)).
-3. YOLO object detection → `output/*_OBJS.csv` (`scripts/object_detection_png.py`, ultralytics).
-4. Summarize OCR via Ollama (gemma) → `output/*_SUMMARIES.csv` (the training target).
-5. Train a **LLaVA 1.5 7B LoRA** adapter on (OCR text → summary) pairs (`training/`).
-6. Serve inference from `deploy/` (FastAPI).
+1. Convert PDFs → PNG pages (`scripts/convert_pdf_to_png.*`), written to
+   `outputs/[timestamp]_[dataset]/`.
+2. OCR the PNGs → `[timestamp]_[dataset]-OCR.csv` in that same folder
+   (`scripts/ocr_detection_png.py`, [Surya OCR](https://github.com/datalab-to/surya)).
+3. Summarize OCR → `[timestamp]_[dataset]-SUMMARIES.csv` in that same folder
+   (`scripts/summarize_ocr_gemma.py`, a local Gemma 3 model — no Ollama/HTTP
+   hop; default `unsloth/gemma-3-4b-it` is an ungated mirror, no `HF_TOKEN`
+   needed) — this is the training target.
+4. Train a **LLaVA 1.5 7B LoRA** adapter on (OCR text → summary) pairs (`training/`).
+5. Serve inference from `deploy/` (FastAPI).
 
 ### Role in the larger system
 
@@ -39,7 +43,8 @@ CPU-only wheel (it silently disables GPU inference).
 uv_setup.bat                :: create/sync .venv, install CUDA torch, validate CUDA
 exec_1.bat                  :: Step 1 - Convert PDF dataset to PNG pages
 exec_2.bat                  :: Step 2 - OCR PNG pages with Surya OCR
-main.bat                    :: interactive menu for all pipeline steps (1-5)
+exec_3.bat                  :: Step 3 - Summarize OCR with local Gemma 3
+main.bat                    :: interactive menu for all pipeline steps
 ```
 
 Each `exec_N.bat` at the project root bootstraps the env via `uv_setup.bat`
