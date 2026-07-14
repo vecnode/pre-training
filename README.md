@@ -7,9 +7,9 @@ Local, GPU-first pipeline that turns a PDF corpus into training data.
 
 - Convert a PDF dataset
 - OCR PNG pages with [Surya OCR](https://github.com/datalab-to/surya)
-- Summarize OCR text with a local Gemma 3 model ([unsloth/gemma-3-4b-it](https://huggingface.co/unsloth/gemma-3-4b-it))
-- Describe page layout/structure image-grounded with a local Gemma 3 model ([unsloth/gemma-3-4b-it](https://huggingface.co/unsloth/gemma-3-4b-it))
-- Generate synthetic QA pairs from OCR text with a local Gemma 3 model ([unsloth/gemma-3-4b-it](https://huggingface.co/unsloth/gemma-3-4b-it))
+- Summarize OCR text with ([unsloth/gemma-3-4b-it](https://huggingface.co/unsloth/gemma-3-4b-it))
+- Describe page layout/structure image-grounded with ([unsloth/gemma-3-4b-it](https://huggingface.co/unsloth/gemma-3-4b-it))
+- Generate synthetic QA pairs from OCR text with ([unsloth/gemma-3-4b-it](https://huggingface.co/unsloth/gemma-3-4b-it))
 
 ## Folder structure
 
