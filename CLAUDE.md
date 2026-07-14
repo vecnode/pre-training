@@ -8,18 +8,15 @@ in `AGENTS.md` — read it first.
 ## Claude-specific quick reference
 
 - This repo is a **local GPU pipeline** that turns a PDF corpus into training
-  data and fine-tunes a **LLaVA 1.5 7B LoRA** adapter (OCR text → summary), plus
-  a FastAPI inference server in `deploy/`.
-- It is **app #2** of a three-app system, started/queried over HTTP by the
-  **metaagent** C++ controller (`vecnode/metaagent`). metaagent never imports
-  this code — keep the `deploy/` HTTP contract (`/api/summarize`, `/api/health`,
-  `/api/model-info`) and `deploy/deploy.bat` stable for it.
+  data: PDF → PNG pages → OCR text → per-page summary. It does not train or
+  serve a model itself — that lives in the separate
+  [`fine-tuning`](https://github.com/vecnode/fine-tuning) repo, which trains
+  on the OCR/SUMMARIES CSVs this repo produces.
 - **Env:** uv only, GPU-first. `uv_setup.bat` sets up `.venv` with CUDA torch;
   each pipeline step also has a standalone `exec_N.bat` at the project root
   (`exec_1.bat` = convert PDFs, `exec_2.bat` = OCR, `exec_3.bat` = summarize
   with local Gemma 3) that bootstraps the env itself and can be double-clicked
-  directly; `main.bat` runs the interactive menu for all steps; `deploy\deploy.bat
-  [host] [port]` serves the model (default `:8008`).
+  directly; `main.bat` runs the interactive menu for all steps.
 - **Per-run outputs:** each `exec_1.bat` run creates `outputs/[timestamp]_[dataset]/`
   holding that run's PNGs plus `[timestamp]_[dataset]-OCR.csv` /
   `-SUMMARIES.csv` once `exec_2`/`exec_3` run against it — everything for one
@@ -30,14 +27,5 @@ in `AGENTS.md` — read it first.
   Hugging Face license click-through / `HF_TOKEN` setup the official repo
   requires. `--model-id` can still point at `google/gemma-3-4b-it` if you've
   set that up, but it's not the default for a reason.
-- **Two weight sources, don't confuse them:** the **LoRA adapter** (~40 MB,
-  `training/runs/llava15_lora/final_adapter/`) is trained locally and only ever
-  copied, never downloaded — if it's missing that's a local-artifact problem.
-  The **base model** (~14 GB, `llava-hf/llava-1.5-7b-hf`) is public and fetched
-  automatically from Hugging Face Hub on first server start via
-  `ensure_base_model_cached()` in `deploy/infer.py`, into `training/hf_cache/`.
-  Both dirs are git-ignored.
 - **Don't** let `uv sync` resolve CPU-only torch (respect the pinned CUDA index
-  in `pyproject.toml`), change `infer.py`'s `INSTRUCTION`/truncation without
-  matching the trainer, or commit weights/CSVs/PDFs/PNGs (all git-ignored).
-- Deployment details: `deploy/README.md`.
+  in `pyproject.toml`), or commit weights/CSVs/PDFs/PNGs (all git-ignored).

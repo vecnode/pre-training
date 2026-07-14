@@ -11,14 +11,4 @@ conversion_log.txt
 __pycache__/
 *.pyc
 *.csv
-
-# training/ — generated files, model weights, outputs
-training/hf_cache/
-training/data/
-training/runs/
-
-examples_ocr.txt
-
-# deploy/ — fused full model is ~14 GB, never commit it
-deploy/merged_model/
 *.safetensors
