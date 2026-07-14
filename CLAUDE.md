@@ -16,10 +16,20 @@ in `AGENTS.md` — read it first.
   `/api/model-info`) and `deploy/deploy.bat` stable for it.
 - **Env:** uv only, GPU-first. `uv_setup.bat` sets up `.venv` with CUDA torch;
   each pipeline step also has a standalone `exec_N.bat` at the project root
-  (currently `exec_1.bat` = convert PDFs, `exec_2.bat` = OCR) that bootstraps
-  the env itself and can be double-clicked directly; `main.bat` runs the
-  interactive menu for all steps; `deploy\deploy.bat [host] [port]` serves the
-  model (default `:8008`).
+  (`exec_1.bat` = convert PDFs, `exec_2.bat` = OCR, `exec_3.bat` = summarize
+  with local Gemma 3) that bootstraps the env itself and can be double-clicked
+  directly; `main.bat` runs the interactive menu for all steps; `deploy\deploy.bat
+  [host] [port]` serves the model (default `:8008`).
+- **Per-run outputs:** each `exec_1.bat` run creates `outputs/[timestamp]_[dataset]/`
+  holding that run's PNGs plus `[timestamp]_[dataset]-OCR.csv` /
+  `-SUMMARIES.csv` once `exec_2`/`exec_3` run against it — everything for one
+  dataset run stays in one folder, and re-running a step against the same
+  folder resumes instead of colliding with a different run.
+- **`exec_3.bat`'s default model is `unsloth/gemma-3-4b-it`** — an ungated
+  mirror of `google/gemma-3-4b-it`'s weights, chosen specifically to avoid the
+  Hugging Face license click-through / `HF_TOKEN` setup the official repo
+  requires. `--model-id` can still point at `google/gemma-3-4b-it` if you've
+  set that up, but it's not the default for a reason.
 - **Two weight sources, don't confuse them:** the **LoRA adapter** (~40 MB,
   `training/runs/llava15_lora/final_adapter/`) is trained locally and only ever
   copied, never downloaded — if it's missing that's a local-artifact problem.

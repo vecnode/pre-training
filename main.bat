@@ -28,9 +28,8 @@ echo Choose an option:
 echo.
 echo   [1] Convert PDFs to PNGs
 echo   [2] OCR text from PNGs
-echo   [3] YOLO object detection from PNGs
-echo   [4] UV setup only (create/sync local env)
-echo   [5] Summarize OCR CSV with Ollama
+echo   [3] UV setup only (create/sync local env)
+echo   [4] Summarize OCR CSV with local Gemma 3
 echo   [0] Exit
 echo.
 
@@ -38,9 +37,8 @@ set /p "OPT=Selection: "
 
 if "%OPT%"=="1" goto convert
 if "%OPT%"=="2" goto ocr
-if "%OPT%"=="3" goto yolo
-if "%OPT%"=="4" goto bootstrap
-if "%OPT%"=="5" goto summarize
+if "%OPT%"=="3" goto bootstrap
+if "%OPT%"=="4" goto summarize
 if "%OPT%"=="0" goto end
 
 echo.
@@ -56,12 +54,8 @@ goto menu
 call "%SCRIPT_DIR%scripts\ocr_detection_png.bat"
 goto menu
 
-:yolo
-call "%SCRIPT_DIR%scripts\object_detection_png.bat"
-goto menu
-
 :summarize
-call "%SCRIPT_DIR%scripts\summarize_ocr_ollama.bat"
+call "%SCRIPT_DIR%scripts\summarize_ocr_gemma.bat"
 goto menu
 
 :bootstrap

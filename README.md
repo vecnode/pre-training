@@ -7,8 +7,7 @@ Local, GPU-first pipeline that turns a PDF corpus into training data and fine-tu
 
 - Convert a PDF dataset into PNG pages
 - OCR PNG pages with Surya OCR
-- Detect objects on PNG pages with YOLO (ultralytics)
-- Summarize OCR text via the Ollama API (gemma)
+- Summarize OCR text with a local Gemma 3 model (no Ollama/HTTP hop)
 - Fine-tune a LLaVA 1.5 7B LoRA adapter on (OCR text → summary) pairs
 - Serve the adapter locally through a FastAPI inference server (`deploy/`)
 
@@ -19,9 +18,7 @@ Local, GPU-first pipeline that turns a PDF corpus into training data and fine-tu
   self-contained in a single folder:
   - `[slug]-page-[n].png` — the converted pages.
   - `[timestamp]_[dataset]-OCR.csv` — OCR text per page (Surya OCR).
-  - `[timestamp]_[dataset]-OBJS.csv` — YOLO object detections per page.
-- `output/`: Generated summaries CSV (`DATASET_SUMMARIES.csv`) from the later
-  Ollama summarization step.
+  - `[timestamp]_[dataset]-SUMMARIES.csv` — per-page summary (local Gemma 3).
 
 Keeping the PNGs and their CSVs in the same timestamped folder means each
 `outputs/[timestamp]_[dataset]/` is a complete, portable unit for that run, and
@@ -35,7 +32,7 @@ different run of a similarly-named dataset.
 uv_setup.bat     :: create/sync local venv, install CUDA torch, validate CUDA
 exec_1.bat       :: Step 1 - Convert PDF dataset to PNG pages (resumable)
 exec_2.bat       :: Step 2 - OCR PNG pages with Surya OCR (resumable)
-exec_3.bat       :: Step 3 - YOLO object detection on PNG pages (resumable)
+exec_3.bat       :: Step 3 - Summarize OCR with local Gemma 3 (resumable)
 main.bat         :: interactive menu covering all pipeline steps
 ```
 
