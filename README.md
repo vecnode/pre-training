@@ -6,8 +6,8 @@
 Local, GPU-first pipeline that turns a PDF corpus into training data and fine-tunes a LLaVA 1.5 7B LoRA adapter (OCR text → summary), served over a FastAPI inference endpoint.
 
 - Convert a PDF dataset into PNG pages
-- OCR PNG pages with Surya OCR
-- Summarize OCR text with a local Gemma 3 model (no Ollama/HTTP hop)
+- OCR PNG pages with [Surya OCR](https://github.com/datalab-to/surya)
+- Summarize OCR text with a local Gemma 3 model ([unsloth/gemma-3-4b-it](https://huggingface.co/unsloth/gemma-3-4b-it))
 - Fine-tune a LLaVA 1.5 7B LoRA adapter on (OCR text → summary) pairs
 - Serve the adapter locally through a FastAPI inference server (`deploy/`)
 
@@ -24,6 +24,10 @@ Keeping the PNGs and their CSVs in the same timestamped folder means each
 `outputs/[timestamp]_[dataset]/` is a complete, portable unit for that run, and
 re-running a step against the same folder resumes instead of colliding with a
 different run of a similarly-named dataset.
+
+`outputs/` is where all generated PNGs and CSVs go, and none of it is
+committed to git — only `outputs/README.md` is tracked; everything else in
+that folder is git-ignored.
 
 
 ## Run Files
